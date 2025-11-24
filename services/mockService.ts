@@ -1,3 +1,4 @@
+
 import { User, Event, GalleryItem, Testimonial, ContactMessage, UserRole, PageContent } from '../types';
 import { auth, db, storage } from './firebase';
 import { 
@@ -34,6 +35,7 @@ const INITIAL_EVENTS: Event[] = [
     title: 'Spring Folk Festival (Demo)',
     date: '2024-03-15',
     time: '14:00',
+    endTime: '18:00',
     location: 'Community Center',
     description: 'This is a demo event. Connect Firebase to see real events.',
     type: 'performance',

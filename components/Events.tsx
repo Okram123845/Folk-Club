@@ -13,9 +13,25 @@ const Events: React.FC<EventsProps> = ({ events, user, onRsvp }) => {
   const { t } = useTranslation();
   
   const generateCalendarUrl = (event: Event) => {
+    const formatDateTime = (dateStr: string, timeStr: string) => {
+        return `${dateStr.replace(/-/g, '')}T${timeStr.replace(/:/g, '')}00`;
+    };
+
+    const start = formatDateTime(event.date, event.time);
+    let end;
+    
+    if (event.endTime) {
+        end = formatDateTime(event.date, event.endTime);
+    } else {
+        // Default 2 hours duration if no end time
+        const [h, m] = event.time.split(':').map(Number);
+        const endH = (h + 2).toString().padStart(2, '0');
+        end = formatDateTime(event.date, `${endH}:${m}`);
+    }
+
     const base = "https://calendar.google.com/calendar/render?action=TEMPLATE";
-    const dates = `${event.date.replace(/-/g, '')}T${event.time.replace(':', '')}00Z/${event.date.replace(/-/g, '')}T${parseInt(event.time.split(':')[0]) + 2}${event.time.split(':')[1]}00Z`;
-    return `${base}&text=${encodeURIComponent(event.title)}&dates=${dates}&details=${encodeURIComponent(event.description)}&location=${encodeURIComponent(event.location)}`;
+    // Adding ctz=America/Toronto to ensure it's interpreted as Eastern Time (Toronto/Kitchener)
+    return `${base}&text=${encodeURIComponent(event.title)}&dates=${start}/${end}&details=${encodeURIComponent(event.description)}&location=${encodeURIComponent(event.location)}&ctz=America/Toronto`;
   };
 
   const handleRsvpClick = (eventId: string) => {
@@ -67,7 +83,7 @@ const Events: React.FC<EventsProps> = ({ events, user, onRsvp }) => {
                       <h3 className="text-xl font-bold text-gray-900 leading-tight mb-2 group-hover:text-roRed transition-colors">{event.title}</h3>
                       <p className="text-roRed font-medium flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                         <span className="flex items-center gap-1 bg-red-50 px-2 py-0.5 rounded">📅 {new Date(event.date).toLocaleDateString()}</span>
-                        <span className="flex items-center gap-1 bg-red-50 px-2 py-0.5 rounded">⏰ {event.time}</span>
+                        <span className="flex items-center gap-1 bg-red-50 px-2 py-0.5 rounded">⏰ {event.time} {event.endTime ? `- ${event.endTime}` : ''} EST</span>
                       </p>
                     </div>
                   </div>

@@ -485,7 +485,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
               <option value="social">Social</option>
             </select>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1 md:col-span-2">
             <label htmlFor="event-date" className="block text-sm font-bold text-gray-700">{t('dash_table_date')}</label>
             <input 
               id="event-date"
@@ -496,17 +496,31 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
               required 
             />
           </div>
-          <div className="space-y-1">
-            <label htmlFor="event-time" className="block text-sm font-bold text-gray-700">Time</label>
-            <input 
-              id="event-time"
-              type="time" 
-              className="p-3 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-roBlue outline-none" 
-              value={newEvent.time || ''} 
-              onChange={e => setNewEvent({...newEvent, time: e.target.value})} 
-              required 
-            />
+          
+          <div className="grid grid-cols-2 gap-4 md:col-span-2">
+            <div className="space-y-1">
+              <label htmlFor="event-time" className="block text-sm font-bold text-gray-700">Start Time (EST)</label>
+              <input 
+                id="event-time"
+                type="time" 
+                className="p-3 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-roBlue outline-none" 
+                value={newEvent.time || ''} 
+                onChange={e => setNewEvent({...newEvent, time: e.target.value})} 
+                required 
+              />
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="event-endtime" className="block text-sm font-bold text-gray-700">End Time (EST)</label>
+              <input 
+                id="event-endtime"
+                type="time" 
+                className="p-3 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-roBlue outline-none" 
+                value={newEvent.endTime || ''} 
+                onChange={e => setNewEvent({...newEvent, endTime: e.target.value})} 
+              />
+            </div>
           </div>
+
           <div className="md:col-span-2 space-y-1">
             <label htmlFor="event-location" className="block text-sm font-bold text-gray-700">{t('contact_label_location')}</label>
             <input 
@@ -619,7 +633,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
                     </td>
                     <td className="p-4 text-gray-600 font-medium align-top">
                       {new Date(ev.date).toLocaleDateString()} <br/>
-                      <span className="text-xs text-gray-400">{ev.time}</span>
+                      <span className="text-xs text-gray-400">
+                        {ev.time} {ev.endTime ? `- ${ev.endTime}` : ''} EST
+                      </span>
                     </td>
                     <td className="p-4 align-top">
                       <div className="flex flex-col items-start gap-1">
@@ -1016,7 +1032,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
                 <h4 className="font-bold text-xl group-hover:text-roBlue transition-colors">{ev.title}</h4>
                 <p className="text-gray-600 mt-2 flex flex-wrap items-center gap-4 text-sm">
                     <span className="flex items-center gap-1">📅 {ev.date}</span>
-                    <span className="flex items-center gap-1">⏰ {ev.time}</span>
+                    <span className="flex items-center gap-1">⏰ {ev.time} {ev.endTime ? `- ${ev.endTime}` : ''} EST</span>
                     <span className="flex items-center gap-1">📍 {ev.location}</span>
                 </p>
               </div>

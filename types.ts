@@ -15,7 +15,8 @@ export interface Event {
   id: string;
   title: string;
   date: string;
-  time: string;
+  time: string; // Start Time
+  endTime?: string; // End Time (New)
   location: string;
   description: string;
   image?: string;

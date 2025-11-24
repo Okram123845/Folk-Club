@@ -12,7 +12,7 @@ const Footer: React.FC = () => {
           ))}
         </div>
         <p className="text-gray-400 text-sm px-4">
-          &copy; {new Date().getFullYear()} Romanian Folk Club. Preserving heritage with pride.
+          &copy; {new Date().getFullYear()} Romanian Kitchener Folk Club. Preserving heritage with pride.
         </p>
         <div className="mt-4 h-1 w-full max-w-xs mx-auto bg-gradient-to-r from-roBlue via-roYellow to-roRed rounded-full"></div>
       </div>

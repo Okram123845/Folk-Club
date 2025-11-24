@@ -17,7 +17,8 @@ import {
   getPageContent,
   updatePageContent,
   deleteGalleryItem,
-  deleteUser
+  deleteUser,
+  isFirebaseActive // Imported helper
 } from '../services/mockService';
 import { useTranslation } from '../services/translations';
 import LanguageSwitcher from './LanguageSwitcher';
@@ -37,6 +38,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   const [activeTab, setActiveTab] = useState(user.role === 'admin' ? 'events' : 'schedule');
   const [isSyncing, setIsSyncing] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  
+  // Connection Status
+  const [isLive, setIsLive] = useState(false);
+  useEffect(() => { setIsLive(isFirebaseActive()); }, []);
   
   // Notification State
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -387,6 +392,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
          <span className={`text-[10px] uppercase tracking-wider px-3 py-1 rounded-full mt-2 font-bold ${user.role === 'admin' ? 'bg-roRed' : 'bg-roBlue'}`}>
            {user.role}
          </span>
+         
+         {/* Live Status Indicator */}
+         <div className={`mt-4 text-[10px] font-bold px-3 py-1 rounded-full flex items-center gap-2 ${isLive ? 'bg-green-900/50 text-green-300' : 'bg-orange-900/50 text-orange-300'}`}>
+            <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-green-500 animate-pulse' : 'bg-orange-500'}`}></span>
+            {isLive ? 'LIVE (Firebase)' : 'DEMO MODE'}
+         </div>
       </div>
       
       <nav className="flex-1 p-4 space-y-2 overflow-y-auto">

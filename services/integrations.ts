@@ -92,7 +92,7 @@ export const sendRSVPConfirmation = async (
     if (TWILIO_CONFIG.ACCOUNT_SID !== 'YOUR_SID') {
       // Real Twilio Logic (Warning: Unsafe in client-side code, use Edge Function in production)
       // This is just structural code
-      const message = `Romanian Folk Club: You are confirmed for ${event.title}! \n📅 ${event.date} @ ${event.time}\n📍 ${event.location}`;
+      const message = `Romanian Kitchener Folk Club: You are confirmed for ${event.title}! \n📅 ${event.date} @ ${event.time}\n📍 ${event.location}`;
       console.log(`[SMS SERVICE] Sending to provider...`);
       // fetch(...)
     } else {

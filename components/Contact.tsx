@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { sendContactMessage, getPageContent } from '../services/mockService';
 import { useTranslation } from '../services/translations';
@@ -50,14 +49,14 @@ const Contact: React.FC = () => {
                 <div className="bg-roYellow/20 p-3 rounded-full text-roYellow text-xl flex-shrink-0 mt-1">📍</div>
                 <div className="min-w-0 flex-1">
                   <h4 className="font-bold text-lg mb-1">{t('contact_label_location')}</h4>
-                  <p className="text-gray-400 text-sm md:text-base break-words">123 Cultural Street, City, State</p>
+                  <p className="text-gray-400 text-sm md:text-base break-words">123 Cultural Street, Kitchener, ON</p>
                 </div>
               </div>
               <div className="flex items-start gap-4 p-4 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors border border-white/5">
                 <div className="bg-roYellow/20 p-3 rounded-full text-roYellow text-xl flex-shrink-0 mt-1">📧</div>
                 <div className="min-w-0 flex-1">
                   <h4 className="font-bold text-lg mb-1">{t('contact_label_email')}</h4>
-                  <p className="text-gray-400 text-sm md:text-base break-words">info@romanianfolkclub.com</p>
+                  <p className="text-gray-400 text-sm md:text-base break-words">info@romaniankitchenerfolkclub.com</p>
                 </div>
               </div>
             </div>

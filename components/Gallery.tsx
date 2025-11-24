@@ -14,7 +14,7 @@ const Gallery: React.FC<GalleryProps> = ({ items }) => {
       <div className="container mx-auto px-4 md:px-6">
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-serif font-bold text-roBlue mb-2">{t('gallery_title')}</h2>
-          <p className="text-gray-500">{t('gallery_subtitle')} @RomanianFolkClub</p>
+          <p className="text-gray-500">{t('gallery_subtitle')} @RomanianKitchenerFolkClub</p>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 md:gap-4">

@@ -1,4 +1,3 @@
-
 import { User, Event, GalleryItem, Testimonial, ContactMessage, UserRole, PageContent } from '../types';
 import { auth, db, storage } from './firebase';
 import { 
@@ -75,15 +74,15 @@ const INITIAL_CONTENT: PageContent[] = [
     id: 'footer_text',
     description: 'Footer Copyright Text',
     text: {
-      en: 'Romanian Folk Club. Preserving heritage with pride.',
-      ro: 'Clubul de Folclor Românesc. Păstrăm tradiția cu mândrie.',
-      fr: 'Club Folklorique Roumain. Préserver le patrimoine avec fierté.'
+      en: 'Romanian Kitchener Folk Club. Preserving heritage with pride.',
+      ro: 'Clubul de Folclor Românesc Kitchener. Păstrăm tradiția cu mândrie.',
+      fr: 'Club Folklorique Roumain de Kitchener. Préserver le patrimoine avec fierté.'
     }
   }
 ];
 
 // Helper to check if Firebase is Active
-const isFirebaseActive = () => !!auth && !!db;
+export const isFirebaseActive = () => !!auth && !!db;
 
 // --- AUTH SERVICE ---
 
@@ -216,14 +215,9 @@ export const saveEvent = async (event: Event): Promise<Event> => {
 };
 
 export const deleteEvent = async (id: string): Promise<void> => {
-  // Confirmation is handled in UI
+  // Confirmation is handled in UI, remove here to avoid double popup
   const idString = String(id);
-  // Check lang for confirmation message
-  const currentLang = localStorage.getItem('app_language') || 'en';
-  const confirmMsg = dictionary['dash_delete_confirm'][currentLang as 'en'|'ro'|'fr'];
   
-  if (!window.confirm(confirmMsg)) return;
-
   if (isFirebaseActive()) {
     await deleteDoc(doc(db!, "events", idString));
   } else {
@@ -244,8 +238,9 @@ export const rsvpEvent = async (eventId: string, userId: string): Promise<void> 
     const eventSnap = await getDoc(eventRef);
     
     // Get User Data for Notification
-    const userSnap = await getDoc(doc(db!, "users", userId));
-    if (userSnap.exists()) targetUser = { id: userSnap.id, ...userSnap.data() } as User;
+    const userData = await getDoc(doc(db!, "users", userId));
+    
+    if (userData.exists()) targetUser = { id: userData.id, ...userData.data() } as User;
 
     if (eventSnap.exists()) {
        const event = eventSnap.data() as Event;

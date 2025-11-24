@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { useTranslation } from '../services/translations';
@@ -55,7 +54,7 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLoginClick, onLogoutClick, onDa
       <div className="container mx-auto px-4 md:px-6 flex justify-between items-center relative z-50">
         <a href="#" onClick={(e) => { e.preventDefault(); scrollToSection('home'); }} className="text-white font-serif font-bold text-xl md:text-2xl flex items-center gap-2 select-none relative z-50">
           <span className="text-2xl md:text-3xl">🇷🇴</span>
-          <span>Folk Club</span>
+          <span>Romanian Kitchener Folk Club</span>
         </a>
 
         {/* Desktop Menu */}

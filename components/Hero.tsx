@@ -1,8 +1,21 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from '../services/translations';
+import { getPageContent } from '../services/mockService';
 
 const Hero: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const [dynamicSubtitle, setDynamicSubtitle] = useState('');
+
+  useEffect(() => {
+    const fetchContent = async () => {
+      const content = await getPageContent();
+      const heroContent = content.find(c => c.id === 'hero_subtitle');
+      if (heroContent) {
+        setDynamicSubtitle(heroContent.text[language]);
+      }
+    };
+    fetchContent();
+  }, [language]);
 
   return (
     <section id="home" className="relative min-h-[100dvh] flex items-center justify-center overflow-hidden w-full">
@@ -22,7 +35,7 @@ const Hero: React.FC = () => {
           {t('hero_title_prefix')} <span className="text-roYellow block md:inline mt-1 md:mt-0">{t('hero_title_highlight')}</span>
         </h1>
         <p className="text-base sm:text-lg md:text-xl lg:text-2xl font-light mb-8 md:mb-12 max-w-3xl mx-auto drop-shadow-md opacity-90 px-2 leading-relaxed">
-          {t('hero_subtitle')}
+          {dynamicSubtitle || t('hero_subtitle')}
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center items-center w-full max-w-sm mx-auto sm:max-w-none">
           <button 

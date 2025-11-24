@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Language } from '../types';
 
@@ -78,6 +79,7 @@ export const dictionary: Translations = {
   dash_tab_testimonials: { en: 'Testimonials', ro: 'Testimoniale', fr: 'Témoignages' },
   dash_tab_schedule: { en: 'My Schedule', ro: 'Programul Meu', fr: 'Mon Planning' },
   dash_tab_resources: { en: 'Member Resources', ro: 'Resurse Membri', fr: 'Ressources Membres' },
+  dash_tab_community: { en: 'My Stories', ro: 'Poveștile Mele', fr: 'Mes Histoires' },
   dash_back: { en: 'Back to Website', ro: 'Înapoi la Site', fr: 'Retour au Site' },
   dash_logged_in: { en: 'Logged in as', ro: 'Conectat ca', fr: 'Connecté en tant que' },
   
@@ -85,6 +87,7 @@ export const dictionary: Translations = {
   dash_add_event: { en: 'Add / Edit Event', ro: 'Adaugă / Edit. Eveniment', fr: 'Ajouter / Modifier' },
   dash_save: { en: 'Save', ro: 'Salvează', fr: 'Enregistrer' },
   dash_delete: { en: 'Delete', ro: 'Șterge', fr: 'Supprimer' },
+  dash_delete_confirm: { en: 'Are you sure you want to delete this item?', ro: 'Sigur doriți să ștergeți acest element?', fr: 'Êtes-vous sûr de vouloir supprimer cet élément ?' },
   dash_event_title: { en: 'Event Title', ro: 'Titlu Eveniment', fr: 'Titre de l\'événement' },
   dash_event_image: { en: 'Event Image', ro: 'Imagine Eveniment', fr: 'Image de l\'événement' },
   dash_event_desc: { en: 'Description', ro: 'Descriere', fr: 'Description' },
@@ -110,6 +113,9 @@ export const dictionary: Translations = {
   dash_demote: { en: 'Demote to Member', ro: 'Retrogradează Membru', fr: 'Rétrograder Membre' },
 
   // Dashboard - Testimonials
+  dash_test_add: { en: 'Submit Your Story', ro: 'Trimite Povestea Ta', fr: 'Soumettez votre histoire' },
+  dash_test_add_desc: { en: 'Share your experience with the community. It will be reviewed by admins.', ro: 'Împărtășește experiența ta cu comunitatea. Va fi revizuită de administratori.', fr: 'Partagez votre expérience avec la communauté. Elle sera examinée par les administrateurs.' },
+  dash_test_edit: { en: 'Edit Testimonial', ro: 'Editează Testimonial', fr: 'Modifier le témoignage' },
   dash_test_pending: { en: 'Pending Approval', ro: 'În Așteptare', fr: 'En Attente' },
   dash_test_pending_desc: { en: 'Review user submitted stories.', ro: 'Revizuiește poveștile trimise.', fr: 'Revoir les histoires soumises.' },
   dash_test_live: { en: 'Live on Site', ro: 'Live pe Site', fr: 'En Ligne' },
@@ -122,6 +128,8 @@ export const dictionary: Translations = {
   dash_btn_approve: { en: 'Approve', ro: 'Aprobă', fr: 'Approuver' },
   dash_btn_hide: { en: 'Hide', ro: 'Ascunde', fr: 'Masquer' },
   dash_btn_remove: { en: 'Remove', ro: 'Elimină', fr: 'Retirer' },
+  dash_content_saved: { en: 'Content updated successfully!', ro: 'Conținut actualizat cu succes!', fr: 'Contenu mis à jour avec succès !' },
+  dash_test_submitted: { en: 'Story submitted for review!', ro: 'Poveste trimisă pentru revizuire!', fr: 'Histoire soumise pour examen !' },
   
   // Dashboard - Member
   dash_no_rsvp: { en: "You haven't RSVP'd to any events yet.", ro: "Nu ai confirmat la niciun eveniment.", fr: "Vous n'avez pas encore répondu aux événements." },

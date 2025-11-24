@@ -8,14 +8,21 @@ import {
   syncInstagram, 
   getUsers, 
   updateUserRole,
+  updateUserProfile,
   getTestimonials,
+  addTestimonial,
+  updateTestimonial,
   toggleTestimonialApproval,
   deleteTestimonial,
   getPageContent,
-  updatePageContent
+  updatePageContent,
+  deleteGalleryItem,
+  deleteUser
 } from '../services/mockService';
 import { useTranslation } from '../services/translations';
 import LanguageSwitcher from './LanguageSwitcher';
+import ConfirmModal from './ConfirmModal';
+import Toast from './Toast';
 
 interface DashboardProps {
   user: User;
@@ -31,38 +38,80 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   const [isSyncing, setIsSyncing] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
+  // Notification State
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  
   // Data States
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [allTestimonials, setAllTestimonials] = useState<Testimonial[]>([]);
   const [pageContents, setPageContents] = useState<PageContent[]>([]);
   
+  // Local Optimistic States (initialized from props)
+  const [localEvents, setLocalEvents] = useState<Event[]>(events);
+  const [localGallery, setLocalGallery] = useState<GalleryItem[]>(gallery);
+
+  // Profile Settings
+  const [phoneNumber, setPhoneNumber] = useState(user.phoneNumber || '');
+
+  // Sync props to local state when props change
+  useEffect(() => { setLocalEvents(events); }, [events]);
+  useEffect(() => { setLocalGallery(gallery); }, [gallery]);
+  
   // Content Editing State
   const [selectedContentId, setSelectedContentId] = useState<string>('');
   const [editContentText, setEditContentText] = useState<{en: string, ro: string, fr: string}>({ en: '', ro: '', fr: '' });
   
+  // Testimonial Editing State (Admin)
+  const [editingTestimonial, setEditingTestimonial] = useState<Testimonial | null>(null);
+  
+  // Testimonial Submission State (Member)
+  const [memberStory, setMemberStory] = useState('');
+
   // Form States
   const [newEvent, setNewEvent] = useState<Partial<Event>>({ type: 'performance' });
   const eventImageRef = useRef<HTMLInputElement>(null);
+  const eventFormTopRef = useRef<HTMLDivElement>(null);
+
+  // --- Modal State ---
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<{ id: string, type: 'event' | 'gallery' | 'user' | 'testimonial', name?: string, img?: string } | null>(null);
+
+  // Helper for Toasts
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+  };
 
   // Fetch local dashboard data
   useEffect(() => {
+    // Both admin and members need testimonials and content might be useful
+    loadCommonData();
     if (user.role === 'admin') {
       loadAdminData();
     }
   }, [user.role, activeTab]);
 
+  const loadCommonData = async () => {
+     try {
+         const tData = await getTestimonials();
+         setAllTestimonials(tData);
+     } catch(e) { console.error(e); }
+  }
+
   const loadAdminData = async () => {
-    const u = await getUsers();
-    setAllUsers(u);
-    const testimonialsData = await getTestimonials();
-    setAllTestimonials(testimonialsData);
-    const contentData = await getPageContent();
-    setPageContents(contentData);
-    
-    // Default selection for content tab
-    if (contentData.length > 0 && !selectedContentId) {
-       setSelectedContentId(contentData[0].id);
-       setEditContentText(contentData[0].text);
+    try {
+      const u = await getUsers();
+      setAllUsers(u);
+      const contentData = await getPageContent();
+      setPageContents(contentData);
+      
+      // Default selection for content tab
+      if (contentData.length > 0 && !selectedContentId) {
+         setSelectedContentId(contentData[0].id);
+         setEditContentText(contentData[0].text);
+      }
+    } catch (e) {
+      console.error("Failed to load dashboard data", e);
     }
   };
 
@@ -71,24 +120,100 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
     e.preventDefault();
     if (!newEvent.title || !newEvent.date) return;
     
-    await saveEvent({
-      ...newEvent,
-      id: newEvent.id || '',
-      attendees: []
-    } as Event);
-    
-    setNewEvent({ type: 'performance' });
-    if (eventImageRef.current) eventImageRef.current.value = '';
-    onUpdateData();
-    alert(t('dash_save') + ' success!');
-  };
-
-  const handleDeleteEvent = async (id: string) => {
-    if (window.confirm('Are you sure?')) {
-      await deleteEvent(id);
+    try {
+      await saveEvent({
+        ...newEvent,
+        id: newEvent.id || '',
+        attendees: newEvent.attendees || []
+      } as Event);
+      
+      setNewEvent({ type: 'performance' });
+      if (eventImageRef.current) eventImageRef.current.value = '';
       onUpdateData();
+      showToast(t('dash_content_saved'), 'success');
+    } catch (e) {
+      showToast('Failed to save event.', 'error');
     }
   };
+
+  const handleEditEvent = (ev: Event) => {
+    setNewEvent(ev);
+    if (eventFormTopRef.current) {
+      eventFormTopRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setNewEvent({ type: 'performance' });
+    if (eventImageRef.current) eventImageRef.current.value = '';
+  };
+
+  // Trigger Modal Openers
+  const requestDeleteEvent = (ev: Event) => {
+    setItemToDelete({ id: ev.id, type: 'event', name: ev.title, img: ev.image });
+    setModalOpen(true);
+  };
+
+  const requestDeleteGallery = (item: GalleryItem) => {
+    setItemToDelete({ id: item.id, type: 'gallery', name: 'Image', img: item.url });
+    setModalOpen(true);
+  };
+
+  const requestDeleteUser = (u: User) => {
+    setItemToDelete({ id: u.id, type: 'user', name: u.name, img: u.avatar });
+    setModalOpen(true);
+  };
+
+  const requestDeleteTestimonial = (test: Testimonial) => {
+    setItemToDelete({ id: test.id, type: 'testimonial', name: `"${test.text.substring(0, 20)}..." by ${test.author}` });
+    setModalOpen(true);
+  };
+
+  // Centralized Delete Logic
+  const executeDelete = async () => {
+    if (!itemToDelete) return;
+
+    setModalLoading(true);
+    try {
+      switch (itemToDelete.type) {
+        case 'event':
+          // Optimistic update
+          setLocalEvents(prev => prev.filter(e => e.id !== itemToDelete.id));
+          await deleteEvent(itemToDelete.id);
+          break;
+        case 'gallery':
+          // Optimistic update
+          setLocalGallery(prev => prev.filter(i => i.id !== itemToDelete.id));
+          await deleteGalleryItem(itemToDelete.id);
+          break;
+        case 'user':
+          await deleteUser(itemToDelete.id);
+          break;
+        case 'testimonial':
+          // Optimistic update
+          setAllTestimonials(prev => prev.filter(t => t.id !== itemToDelete.id));
+          await deleteTestimonial(itemToDelete.id);
+          break;
+      }
+      
+      // Refresh Data (Sync)
+      onUpdateData();
+      if (itemToDelete.type === 'user') loadAdminData();
+      
+      showToast(`${itemToDelete.type.charAt(0).toUpperCase() + itemToDelete.type.slice(1)} deleted successfully.`, 'success');
+    } catch (error) {
+      console.error("Delete failed", error);
+      showToast("Failed to delete item. Please try again.", 'error');
+      // Revert states if needed (simplified here by just reloading)
+      onUpdateData();
+      loadCommonData();
+    } finally {
+      setModalLoading(false);
+      setModalOpen(false);
+      setItemToDelete(null);
+    }
+  };
+
 
   const handleEventImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -106,50 +231,116 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      const base64 = reader.result as string;
-      await addGalleryItem({
-        url: base64,
-        caption: file.name,
-        source: 'upload'
-      });
-      onUpdateData();
-    };
-    reader.readAsDataURL(file);
+    try {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64 = reader.result as string;
+        await addGalleryItem({
+          url: base64,
+          caption: file.name,
+          source: 'upload'
+        });
+        onUpdateData();
+        showToast('Image uploaded successfully', 'success');
+      };
+      reader.readAsDataURL(file);
+    } catch (e) {
+      showToast('Failed to upload image', 'error');
+    }
   };
 
   const handleInstagramSync = async () => {
     setIsSyncing(true);
-    await syncInstagram();
-    setIsSyncing(false);
-    onUpdateData();
+    try {
+      await syncInstagram();
+      onUpdateData();
+      showToast('Synced with Instagram successfully', 'success');
+    } catch (e) {
+      showToast('Instagram sync failed. Check API configuration.', 'error');
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // --- User Handlers ---
   const handleToggleRole = async (targetUser: User) => {
     if (targetUser.id === user.id) {
-      alert("You cannot change your own role.");
+      showToast("You cannot change your own role.", 'error');
       return;
     }
-    const newRole = targetUser.role === 'admin' ? 'member' : 'admin';
-    await updateUserRole(targetUser.id, newRole);
-    loadAdminData();
-  };
-
-  // --- Testimonial Handlers ---
-  const handleToggleTestimonial = async (id: string) => {
-    await toggleTestimonialApproval(id);
-    loadAdminData();
-    onUpdateData(); // Refresh main app testimonials
-  };
-
-  const handleDeleteTestimonial = async (id: string) => {
-    if (window.confirm(t('dash_delete') + '?')) {
-      await deleteTestimonial(id);
+    try {
+      const newRole = targetUser.role === 'admin' ? 'member' : 'admin';
+      await updateUserRole(targetUser.id, newRole);
       loadAdminData();
-      onUpdateData();
+      showToast(`User role updated to ${newRole}`, 'success');
+    } catch (e) {
+      showToast("Failed to update user role", 'error');
     }
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      await updateUserProfile(user.id, { phoneNumber });
+      showToast("Profile settings saved!", 'success');
+    } catch(e) {
+      showToast("Failed to save profile.", 'error');
+    }
+  };
+
+  // --- Testimonial Handlers (Admin) ---
+  const handleToggleTestimonial = async (id: string) => {
+    // Optimistic Update
+    const previousState = [...allTestimonials];
+    setAllTestimonials(prev => prev.map(t => 
+      t.id === id ? { ...t, approved: !t.approved } : t
+    ));
+
+    try {
+      await toggleTestimonialApproval(id);
+      onUpdateData(); // Sync Global
+      showToast('Testimonial status updated', 'success');
+    } catch (e) {
+      // Revert on failure
+      setAllTestimonials(previousState);
+      showToast('Failed to update testimonial', 'error');
+    }
+  };
+
+  const handleSaveTestimonialEdit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if(!editingTestimonial) return;
+
+      // Optimistic Update
+      setAllTestimonials(prev => prev.map(t => 
+        t.id === editingTestimonial.id ? { ...t, text: editingTestimonial.text, author: editingTestimonial.author } : t
+      ));
+
+      try {
+          await updateTestimonial(editingTestimonial.id, { 
+              text: editingTestimonial.text, 
+              author: editingTestimonial.author 
+          });
+          setEditingTestimonial(null);
+          onUpdateData();
+          showToast(t('dash_content_saved'), 'success');
+      } catch(e) {
+          showToast("Failed to update testimonial", 'error');
+          loadCommonData(); // Revert/Reload
+      }
+  };
+  
+  // --- Testimonial Handlers (Member) ---
+  const handleSubmitStory = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if(!memberStory) return;
+      try {
+          await addTestimonial(user.name, 'Member', memberStory);
+          setMemberStory('');
+          showToast(t('dash_test_submitted'), 'success');
+          loadCommonData();
+      } catch(e) {
+          showToast("Failed to submit story", 'error');
+      }
   };
 
   // --- Content Handlers ---
@@ -162,10 +353,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   };
 
   const handleSaveContent = async () => {
-    await updatePageContent(selectedContentId, editContentText);
-    loadAdminData(); // Refresh local state
-    onUpdateData(); // Refresh app state
-    alert("Content updated successfully!");
+    try {
+      await updatePageContent(selectedContentId, editContentText);
+      loadAdminData(); // Refresh local state
+      onUpdateData(); // Refresh app state
+      showToast(t('dash_content_saved'), 'success');
+    } catch (e) {
+      showToast('Failed to save content', 'error');
+    }
   };
 
   // --- Render Sections ---
@@ -208,7 +403,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
           <>
              <NavButton id="schedule" label={t('dash_tab_schedule')} icon="📆" />
              <NavButton id="resources" label={t('dash_tab_resources')} icon="📚" />
+             <NavButton id="community" label={t('dash_tab_community')} icon="✍️" />
           </>
+        )}
+        {user.role === 'guest' && (
+           <div className="text-center p-4 text-gray-400 text-sm">
+             <p className="mb-2">Account Pending Approval</p>
+             <p>Contact admin to upgrade membership.</p>
+           </div>
         )}
       </nav>
       
@@ -224,11 +426,27 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
     </div>
   );
 
+  if (user.role === 'guest') {
+     // Special simplified view for guests
+     return (
+       <div className="fixed inset-0 z-[60] bg-slate-50 font-sans flex items-center justify-center p-4">
+          <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-md w-full">
+             <div className="text-5xl mb-4">⏳</div>
+             <h2 className="text-2xl font-bold text-roBlue mb-2">Membership Pending</h2>
+             <p className="text-gray-600 mb-6">Thank you for joining! An administrator needs to approve your account before you can access the member area.</p>
+             <button onClick={onClose} className="bg-roBlue text-white px-6 py-3 rounded-full font-bold w-full hover:bg-blue-900 transition-colors">
+               Back to Website
+             </button>
+          </div>
+       </div>
+     );
+  }
+
   const renderAdminEvents = () => (
-    <div className="space-y-8 animate-fade-in-up pb-10">
+    <div className="space-y-8 animate-fade-in-up pb-10" ref={eventFormTopRef}>
       <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
         <h3 className="text-xl font-bold mb-6 text-slate-800 border-b pb-2 flex items-center gap-2">
-          <span>✨</span> {t('dash_add_event')}
+          <span>{newEvent.id ? '✏️' : '✨'}</span> {newEvent.id ? 'Edit Event' : t('dash_add_event')}
         </h3>
         <form onSubmit={handleAddEvent} className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-1">
@@ -336,9 +554,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
             />
           </div>
           
-          <button type="submit" className="bg-green-600 text-white py-4 rounded-lg md:col-span-2 hover:bg-green-700 shadow-lg transition-transform hover:-translate-y-0.5 font-bold text-lg flex items-center justify-center gap-2">
-            <span>💾</span> {t('dash_save')}
-          </button>
+          <div className="md:col-span-2 flex gap-4">
+            {newEvent.id && (
+              <button 
+                type="button" 
+                onClick={handleCancelEdit}
+                className="flex-1 bg-gray-500 text-white py-4 rounded-lg hover:bg-gray-600 shadow-lg transition-transform hover:-translate-y-0.5 font-bold text-lg flex items-center justify-center gap-2"
+              >
+                <span>🚫</span> Cancel
+              </button>
+            )}
+            <button 
+              type="submit" 
+              className="flex-1 bg-green-600 text-white py-4 rounded-lg hover:bg-green-700 shadow-lg transition-transform hover:-translate-y-0.5 font-bold text-lg flex items-center justify-center gap-2"
+            >
+              <span>💾</span> {newEvent.id ? 'Update Event' : t('dash_save')}
+            </button>
+          </div>
         </form>
       </div>
 
@@ -354,41 +586,70 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {events.map(ev => (
-                <tr key={ev.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="p-4">
-                    <div className="flex items-center gap-4">
-                      {ev.image ? (
-                        <img src={ev.image} alt="" className="w-12 h-12 rounded-lg object-cover shadow-sm" />
-                      ) : (
-                        <div className="w-12 h-12 rounded-lg bg-gray-200 flex items-center justify-center text-xl">📅</div>
-                      )}
-                      <div>
-                        <div className="font-bold text-slate-800">{ev.title}</div>
-                        <div className="text-xs text-gray-500">{ev.location}</div>
+              {localEvents.map(ev => {
+                // Calculate attendees
+                const safeAttendees = ev.attendees || [];
+                const attendeesList = allUsers.filter(u => safeAttendees.includes(u.id));
+                
+                return (
+                  <tr key={ev.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="p-4 align-top">
+                      <div className="flex items-center gap-4">
+                        {ev.image ? (
+                          <img src={ev.image} alt="" className="w-12 h-12 rounded-lg object-cover shadow-sm" />
+                        ) : (
+                          <div className="w-12 h-12 rounded-lg bg-gray-200 flex items-center justify-center text-xl">📅</div>
+                        )}
+                        <div>
+                          <div className="font-bold text-slate-800">{ev.title}</div>
+                          <div className="text-xs text-gray-500">{ev.location}</div>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="p-4 text-gray-600 font-medium">
-                    {new Date(ev.date).toLocaleDateString()} <br/>
-                    <span className="text-xs text-gray-400">{ev.time}</span>
-                  </td>
-                  <td className="p-4">
-                    <span className="bg-blue-100 text-blue-800 py-1 px-3 rounded-full text-xs font-bold">
-                      {ev.attendees.length}
-                    </span>
-                  </td>
-                  <td className="p-4 text-right">
-                    <button 
-                      onClick={() => handleDeleteEvent(ev.id)} 
-                      className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-2 rounded-lg transition-colors"
-                      title={t('dash_delete')}
-                    >
-                      🗑️
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="p-4 text-gray-600 font-medium align-top">
+                      {new Date(ev.date).toLocaleDateString()} <br/>
+                      <span className="text-xs text-gray-400">{ev.time}</span>
+                    </td>
+                    <td className="p-4 align-top">
+                      <div className="flex flex-col items-start gap-1">
+                        <span className="bg-blue-100 text-blue-800 py-1 px-3 rounded-full text-xs font-bold whitespace-nowrap">
+                          {attendeesList.length} Attendees
+                        </span>
+                        {attendeesList.length > 0 && (
+                          <details className="text-xs text-gray-600 w-full mt-1 border border-blue-100 rounded bg-blue-50/50 p-2">
+                            <summary className="cursor-pointer hover:text-roBlue font-bold select-none flex items-center gap-1">
+                              <span>👥</span> View List
+                            </summary>
+                            <ul className="list-disc pl-4 mt-2 space-y-1 max-h-[100px] overflow-y-auto">
+                              {attendeesList.map(u => (
+                                <li key={u.id} className="text-slate-700">{u.name}</li>
+                              ))}
+                            </ul>
+                          </details>
+                        )}
+                      </div>
+                    </td>
+                    <td className="p-4 text-right align-top">
+                      <div className="flex justify-end gap-2">
+                        <button 
+                          onClick={() => handleEditEvent(ev)}
+                          className="text-blue-500 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 p-2 rounded-lg transition-colors"
+                          title="Edit"
+                        >
+                          ✏️
+                        </button>
+                        <button 
+                          onClick={() => requestDeleteEvent(ev)} 
+                          className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-2 rounded-lg transition-colors"
+                          title={t('dash_delete')}
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -433,13 +694,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-        {gallery.map(item => (
+        {localGallery.map(item => (
           <div key={item.id} className="relative group aspect-square bg-gray-200 rounded-xl overflow-hidden shadow-sm">
             <img src={item.url} alt="Admin view" className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
+            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3 justify-between">
                 <span className="text-white text-[10px] uppercase font-bold tracking-wider bg-black/60 backdrop-blur px-2 py-1 rounded">
                   {item.source}
                 </span>
+                <button 
+                   onClick={() => requestDeleteGallery(item)}
+                   className="text-white bg-red-600 p-1.5 rounded-full hover:bg-red-700"
+                   title="Delete"
+                >
+                  🗑️
+                </button>
             </div>
           </div>
         ))}
@@ -475,17 +743,27 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
                     </span>
                   </td>
                   <td className="p-4 text-right">
-                     <button 
-                       onClick={() => handleToggleRole(u)}
-                       disabled={u.id === user.id}
-                       className={`text-sm font-bold px-3 py-1 rounded transition-colors ${
-                         u.id === user.id 
-                           ? 'text-gray-400 cursor-not-allowed bg-gray-100' 
-                           : 'text-roBlue hover:bg-roBlue hover:text-white border border-roBlue'
-                       }`}
-                     >
-                       {u.role === 'admin' ? t('dash_demote') : t('dash_promote')}
-                     </button>
+                    <div className="flex justify-end gap-2">
+                       <button 
+                         onClick={() => handleToggleRole(u)}
+                         disabled={u.id === user.id}
+                         className={`text-sm font-bold px-3 py-1 rounded transition-colors ${
+                           u.id === user.id 
+                             ? 'text-gray-400 cursor-not-allowed bg-gray-100' 
+                             : 'text-roBlue hover:bg-roBlue hover:text-white border border-roBlue'
+                         }`}
+                       >
+                         {u.role === 'admin' ? t('dash_demote') : t('dash_promote')}
+                       </button>
+                       <button 
+                         onClick={() => requestDeleteUser(u)}
+                         disabled={u.id === user.id}
+                         className={`p-1.5 rounded text-red-500 hover:bg-red-50 ${u.id === user.id ? 'opacity-30 cursor-not-allowed' : ''}`}
+                         title="Delete User"
+                       >
+                         🗑️
+                       </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -508,6 +786,49 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
                 <p className="text-gray-500 text-sm">{allTestimonials.filter(t => t.approved).length} {t('dash_test_live_desc')}</p>
             </div>
         </div>
+
+        {/* Admin Edit Overlay */}
+        {editingTestimonial && (
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+             <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg animate-fade-in">
+                <h3 className="text-xl font-bold mb-4">{t('dash_test_edit')}</h3>
+                <form onSubmit={handleSaveTestimonialEdit} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">{t('dash_test_author')}</label>
+                        <input 
+                           type="text" 
+                           className="w-full p-2 border rounded-lg"
+                           value={editingTestimonial.author}
+                           onChange={e => setEditingTestimonial({...editingTestimonial, author: e.target.value})}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-1">{t('dash_test_content')}</label>
+                        <textarea 
+                           className="w-full p-2 border rounded-lg h-32"
+                           value={editingTestimonial.text}
+                           onChange={e => setEditingTestimonial({...editingTestimonial, text: e.target.value})}
+                        />
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                       <button 
+                         type="button"
+                         onClick={() => setEditingTestimonial(null)}
+                         className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                       >
+                         Cancel
+                       </button>
+                       <button 
+                         type="submit"
+                         className="px-4 py-2 bg-roBlue text-white rounded-lg hover:bg-blue-900"
+                       >
+                         {t('dash_save')}
+                       </button>
+                    </div>
+                </form>
+             </div>
+          </div>
+        )}
 
         <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
             <div className="overflow-x-auto">
@@ -538,6 +859,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
                         <td className="p-4 text-right">
                             <div className="flex justify-end gap-2">
                               <button 
+                                onClick={() => setEditingTestimonial(testimonial)} 
+                                className="text-blue-500 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 p-2 rounded-lg transition-colors"
+                                title="Edit"
+                              >
+                                ✏️
+                              </button>
+                              <button 
                                 onClick={() => handleToggleTestimonial(testimonial.id)} 
                                 className={`text-xs font-bold px-3 py-1 rounded transition-colors ${
                                   testimonial.approved 
@@ -548,7 +876,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
                                   {testimonial.approved ? t('dash_btn_hide') : t('dash_btn_approve')}
                               </button>
                               <button 
-                                onClick={() => handleDeleteTestimonial(testimonial.id)} 
+                                onClick={() => requestDeleteTestimonial(testimonial)} 
                                 className="bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-700 p-1.5 rounded"
                                 title={t('dash_delete')}
                               >
@@ -638,6 +966,31 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
     const myEvents = events.filter(e => e.attendees.includes(user.id));
     return (
       <div className="space-y-6 animate-fade-in-up pb-10">
+        
+        {/* Profile / SMS Settings */}
+        <div className="bg-white p-6 rounded-xl shadow-md border-l-4 border-roBlue">
+          <h3 className="text-xl font-bold mb-4">My Profile Settings</h3>
+          <div className="flex flex-col md:flex-row gap-4 items-end">
+             <div className="flex-1 w-full">
+                <label className="block text-sm font-bold text-gray-700 mb-1">Mobile Number (for SMS Alerts)</label>
+                <input 
+                  type="tel" 
+                  placeholder="+1 (555) 000-0000" 
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-roBlue outline-none"
+                  value={phoneNumber}
+                  onChange={e => setPhoneNumber(e.target.value)}
+                />
+             </div>
+             <button 
+               onClick={handleSaveProfile}
+               className="bg-roBlue text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-900 transition-colors w-full md:w-auto"
+             >
+               Save Settings
+             </button>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">Add your number to receive instant text confirmations when you RSVP to events.</p>
+        </div>
+
         <h2 className="text-2xl font-bold border-b pb-4">{t('dash_tab_schedule')}</h2>
         {myEvents.length === 0 ? (
           <div className="bg-white p-12 rounded-xl shadow-sm text-center border border-dashed border-gray-300">
@@ -667,6 +1020,51 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
       </div>
     );
   };
+  
+  const renderMemberCommunity = () => (
+      <div className="space-y-6 animate-fade-in-up pb-10">
+          <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
+             <h2 className="text-2xl font-bold mb-4">{t('dash_test_add')}</h2>
+             <p className="text-gray-600 mb-6">{t('dash_test_add_desc')}</p>
+             
+             <form onSubmit={handleSubmitStory} className="space-y-4">
+                 <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">Your Story</label>
+                    <textarea 
+                       className="w-full p-4 border rounded-xl h-40 focus:ring-2 focus:ring-roBlue outline-none"
+                       placeholder="Share your favorite memory from the folk club..."
+                       value={memberStory}
+                       onChange={e => setMemberStory(e.target.value)}
+                       required
+                    />
+                 </div>
+                 <button 
+                   type="submit" 
+                   className="bg-roBlue text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-900 transition-colors shadow-lg"
+                 >
+                   Submit for Review
+                 </button>
+             </form>
+          </div>
+          
+          <div className="mt-8">
+             <h3 className="font-bold text-lg mb-4 text-gray-500">My Submissions</h3>
+             <div className="space-y-4">
+                {allTestimonials.filter(t => t.author === user.name).map(t => (
+                    <div key={t.id} className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex justify-between items-center">
+                       <p className="text-gray-600 truncate flex-1 pr-4">"{t.text}"</p>
+                       <span className={`text-xs font-bold px-2 py-1 rounded ${t.approved ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                           {t.approved ? 'Live' : 'Pending'}
+                       </span>
+                    </div>
+                ))}
+                {allTestimonials.filter(t => t.author === user.name).length === 0 && (
+                    <p className="text-gray-400 italic">No submissions yet.</p>
+                )}
+             </div>
+          </div>
+      </div>
+  );
 
   return (
     <div className="fixed inset-0 z-[60] bg-slate-50 font-sans flex h-screen overflow-hidden">
@@ -720,6 +1118,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
                   activeTab === 'testimonials' ? t('dash_tab_testimonials') : 
                   activeTab === 'content' ? 'Manage Content' : 
                   activeTab === 'schedule' ? t('dash_tab_schedule') : 
+                  activeTab === 'community' ? t('dash_tab_community') :
                   t('nav_dashboard')}
                </h1>
                <p className="text-gray-500 text-sm hidden sm:block mt-1">
@@ -736,6 +1135,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
             {activeTab === 'testimonials' && renderAdminTestimonials()}
             {activeTab === 'content' && renderAdminContent()}
             {activeTab === 'schedule' && renderMemberSchedule()}
+            {activeTab === 'community' && renderMemberCommunity()}
             {activeTab === 'resources' && (
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in-up">
                 {[
@@ -754,6 +1154,27 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
           </div>
         </main>
       </div>
+
+      {/* Toast Notification */}
+      {toast && (
+        <Toast 
+          message={toast.message} 
+          type={toast.type} 
+          onClose={() => setToast(null)} 
+        />
+      )}
+
+      {/* Reusable Confirm Modal */}
+      <ConfirmModal 
+        isOpen={modalOpen}
+        title={t('dash_delete')}
+        message={itemToDelete?.name ? `${t('dash_delete_confirm')} (${itemToDelete.name})` : t('dash_delete_confirm')}
+        isDestructive={true}
+        isLoading={modalLoading}
+        onConfirm={executeDelete}
+        onClose={() => { setModalOpen(false); setItemToDelete(null); }}
+        previewImage={itemToDelete?.img}
+      />
     </div>
   );
 };

@@ -1,49 +1,46 @@
 
-import { User, Event, GalleryItem, Testimonial, ContactMessage, InstagramPost, UserRole, PageContent } from '../types';
-import { sendRealEmail, fetchRealInstagramPosts } from './integrations';
+import { User, Event, GalleryItem, Testimonial, ContactMessage, UserRole, PageContent } from '../types';
+import { auth, db, storage } from './firebase';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut, 
+  updateProfile 
+} from 'firebase/auth';
+import { 
+  collection, 
+  getDocs, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  setDoc, 
+  getDoc,
+  arrayUnion,
+  arrayRemove
+} from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { sendRealEmail, fetchRealInstagramPosts, sendRSVPConfirmation } from './integrations';
+import { dictionary } from './translations';
 
-// Mock Data Initialization
+// --- MOCK DATA (Fallback for Demo Mode) ---
 const INITIAL_USERS: User[] = [
-  { id: 'admin1', name: 'Admin User', email: 'admin@folk.com', role: 'admin', avatar: 'https://ui-avatars.com/api/?name=Admin+User&background=C8102E&color=fff' },
-  { id: 'mem1', name: 'Maria Dan', email: 'member@folk.com', role: 'member', avatar: 'https://ui-avatars.com/api/?name=Maria+Dan&background=002B7F&color=fff' },
-  { id: 'mem2', name: 'Ion Popa', email: 'ion@folk.com', role: 'member', avatar: 'https://ui-avatars.com/api/?name=Ion+Popa&background=FCD116&color=000' }
+  { id: 'admin1', name: 'Admin User', email: 'admin@folk.com', role: 'admin', avatar: 'https://ui-avatars.com/api/?name=Admin+User&background=C8102E&color=fff', phoneNumber: '+1234567890' },
+  { id: 'mem1', name: 'Maria Dan', email: 'member@folk.com', role: 'member', avatar: 'https://ui-avatars.com/api/?name=Maria+Dan&background=002B7F&color=fff' }
 ];
 
 const INITIAL_EVENTS: Event[] = [
   {
     id: '1',
-    title: 'Spring Folk Festival',
+    title: 'Spring Folk Festival (Demo)',
     date: '2024-03-15',
     time: '14:00',
-    location: 'Community Center Main Hall',
-    description: 'Join us for our annual Spring Folk Festival featuring traditional dances from Transylvania.',
+    location: 'Community Center',
+    description: 'This is a demo event. Connect Firebase to see real events.',
     type: 'performance',
     attendees: [],
-    image: 'https://images.unsplash.com/photo-1541963463532-d68292c34b19?auto=format&fit=crop&w=800&q=80'
-  },
-  {
-    id: '2',
-    title: 'Beginner Dance Workshop',
-    date: '2024-04-10',
-    time: '18:30',
-    location: 'Studio B',
-    description: 'Learn the basics of the Hora. No partner needed!',
-    type: 'workshop',
-    attendees: [],
-    image: 'https://images.unsplash.com/photo-1516483638261-f4dbaf036963?auto=format&fit=crop&w=800&q=80'
+    image: 'https://images.unsplash.com/photo-1541963463532-d68292c34b19'
   }
-];
-
-const INITIAL_GALLERY: GalleryItem[] = [
-  { id: '1', url: 'https://images.unsplash.com/photo-1533174072545-e8d4aa97edf9?auto=format&fit=crop&w=600&q=80', caption: 'Festival 2023', source: 'upload', dateAdded: '2023-09-15' },
-  { id: '2', url: 'https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=600&q=80', caption: 'Costume details', source: 'instagram', dateAdded: '2023-10-01' },
-  { id: '3', url: 'https://images.unsplash.com/photo-1504609773096-104ff2c73ba4?auto=format&fit=crop&w=600&q=80', caption: 'Group photo', source: 'upload', dateAdded: '2023-11-20' },
-];
-
-const INITIAL_TESTIMONIALS: Testimonial[] = [
-  { id: '1', author: 'Elena Popescu', role: 'Member since 2020', text: 'This club has reconnected me with my roots. The dance instructors are amazing!', approved: true },
-  { id: '2', author: 'John Smith', role: 'Visitor', text: 'Saw them perform at the city parade. Incredible energy!', approved: true },
-  { id: '3', author: 'Ana Radu', role: 'Student', text: 'Waiting for approval on this review.', approved: false },
 ];
 
 const INITIAL_CONTENT: PageContent[] = [
@@ -64,230 +61,388 @@ const INITIAL_CONTENT: PageContent[] = [
       ro: 'Interesat să te alături clubului, să rezervi un spectacol sau doar să ne saluți?',
       fr: 'Intéressé à rejoindre notre club, réserver un spectacle ou simplement dire bonjour ?'
     }
+  },
+  {
+    id: 'hero_subtitle',
+    description: 'Hero Section - Subtitle',
+    text: {
+      en: 'Celebrating the vibrant spirit of Romanian culture through dance, music, and community.',
+      ro: 'Celebrăm spiritul vibrant al culturii românești prin dans, muzică și comunitate.',
+      fr: 'Célébrer l\'esprit vibrant de la culture roumaine à travers la danse, la musique et la communauté.'
+    }
+  },
+  {
+    id: 'footer_text',
+    description: 'Footer Copyright Text',
+    text: {
+      en: 'Romanian Folk Club. Preserving heritage with pride.',
+      ro: 'Clubul de Folclor Românesc. Păstrăm tradiția cu mândrie.',
+      fr: 'Club Folklorique Roumain. Préserver le patrimoine avec fierté.'
+    }
   }
 ];
 
-// Helpers to simulate API delay
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-const readFileAsBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    });
-};
+// Helper to check if Firebase is Active
+const isFirebaseActive = () => !!auth && !!db;
 
-// --- Auth & User Service ---
-export const getUsers = async (): Promise<User[]> => {
-  await delay(400);
-  const stored = localStorage.getItem('users');
-  return stored ? JSON.parse(stored) : INITIAL_USERS;
-};
-
-const saveUsers = (users: User[]) => localStorage.setItem('users', JSON.stringify(users));
+// --- AUTH SERVICE ---
 
 export const loginUser = async (email: string, password: string): Promise<User> => {
-  await delay(800);
-  const users = await getUsers();
-  const user = users.find(u => u.email === email);
+  if (isFirebaseActive()) {
+    const userCredential = await signInWithEmailAndPassword(auth!, email, password);
+    const firebaseUser = userCredential.user;
+    
+    // Fetch custom user role from Firestore
+    const userDoc = await getDoc(doc(db!, "users", firebaseUser.uid));
+    const userData = userDoc.exists() ? userDoc.data() : {};
 
-  // Simple mock password check (in real app, use backend hashing)
-  if (user) {
-    if ((email.includes('admin') && password === 'admin') || (email.includes('member') && password === 'member') || password === 'password') {
-       return user;
-    }
+    return {
+      id: firebaseUser.uid,
+      name: firebaseUser.displayName || email.split('@')[0],
+      email: firebaseUser.email || '',
+      role: userData.role || 'member',
+      avatar: firebaseUser.photoURL || `https://ui-avatars.com/api/?name=${email}&background=random`,
+      phoneNumber: userData.phoneNumber || ''
+    };
+  } else {
+    // Local Fallback
+    await new Promise(r => setTimeout(r, 500));
+    const users = JSON.parse(localStorage.getItem('users') || JSON.stringify(INITIAL_USERS));
+    const user = users.find((u: User) => u.email === email);
+    if (user && ((email.includes('admin') && password === 'admin') || password === 'member' || password === 'password')) return user;
+    throw new Error('Demo Mode: Use admin@folk.com / admin');
   }
-  
-  throw new Error('Invalid credentials. Try admin@folk.com / admin');
 };
 
 export const registerUser = async (name: string, email: string): Promise<User> => {
-  await delay(800);
-  const users = await getUsers();
-  if (users.find(u => u.email === email)) throw new Error('Email already exists');
+  if (isFirebaseActive()) {
+    const userCredential = await createUserWithEmailAndPassword(auth!, email, 'password123'); // Simple password for now, normally input
+    await updateProfile(userCredential.user, { displayName: name });
+    
+    const newUser: User = {
+      id: userCredential.user.uid,
+      name,
+      email,
+      role: 'member',
+      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
+      phoneNumber: ''
+    };
 
-  const newUser: User = { 
-    id: `u_${Date.now()}`, 
-    name, 
-    email, 
-    role: 'member', 
-    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random` 
-  };
-  
-  saveUsers([...users, newUser]);
-  return newUser;
+    // Save extended profile to Firestore
+    await setDoc(doc(db!, "users", newUser.id), {
+      name, email, role: 'member', createdAt: new Date().toISOString(), phoneNumber: ''
+    });
+
+    return newUser;
+  } else {
+    // Local Fallback
+    const users = JSON.parse(localStorage.getItem('users') || JSON.stringify(INITIAL_USERS));
+    const newUser = { id: `u_${Date.now()}`, name, email, role: 'member', avatar: `https://ui-avatars.com/api/?name=${name}`, phoneNumber: '' };
+    localStorage.setItem('users', JSON.stringify([...users, newUser]));
+    return newUser as User;
+  }
+};
+
+export const getUsers = async (): Promise<User[]> => {
+  if (isFirebaseActive()) {
+    const querySnapshot = await getDocs(collection(db!, "users"));
+    return querySnapshot.docs.map(d => ({ id: d.id, ...d.data() } as User));
+  } else {
+    return JSON.parse(localStorage.getItem('users') || JSON.stringify(INITIAL_USERS));
+  }
 };
 
 export const updateUserRole = async (userId: string, role: UserRole): Promise<void> => {
-  await delay(500);
-  const users = await getUsers();
-  const updatedUsers = users.map(u => u.id === userId ? { ...u, role } : u);
-  saveUsers(updatedUsers);
+  if (isFirebaseActive()) {
+    await updateDoc(doc(db!, "users", userId), { role });
+  } else {
+    const users = await getUsers();
+    const updated = users.map(u => u.id === userId ? { ...u, role } : u);
+    localStorage.setItem('users', JSON.stringify(updated));
+  }
 };
 
-// --- Event Service ---
+export const updateUserProfile = async (userId: string, data: Partial<User>): Promise<void> => {
+  if (isFirebaseActive()) {
+    await updateDoc(doc(db!, "users", userId), data);
+  } else {
+    const users = await getUsers();
+    const updated = users.map(u => u.id === userId ? { ...u, ...data } : u);
+    localStorage.setItem('users', JSON.stringify(updated));
+  }
+};
+
+// --- EVENTS SERVICE ---
+
 export const getEvents = async (): Promise<Event[]> => {
-  await delay(500);
-  const stored = localStorage.getItem('events');
-  return stored ? JSON.parse(stored) : INITIAL_EVENTS;
+  if (isFirebaseActive()) {
+    const querySnapshot = await getDocs(collection(db!, "events"));
+    return querySnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Event));
+  } else {
+    return JSON.parse(localStorage.getItem('events') || JSON.stringify(INITIAL_EVENTS));
+  }
 };
 
 export const saveEvent = async (event: Event): Promise<Event> => {
-  await delay(600);
-  const events = await getEvents();
-  const index = events.findIndex(e => e.id === event.id);
-  let newEvents;
-  if (index >= 0) {
-    newEvents = [...events];
-    newEvents[index] = event;
+  if (isFirebaseActive()) {
+    let imageUrl = event.image;
+    
+    // If image is base64 (from upload), upload to Firebase Storage
+    if (event.image?.startsWith('data:')) {
+       const storageRef = ref(storage!, `events/${Date.now()}_img`);
+       const response = await fetch(event.image);
+       const blob = await response.blob();
+       await uploadBytes(storageRef, blob);
+       imageUrl = await getDownloadURL(storageRef);
+    }
+
+    const eventData = { ...event, image: imageUrl || '' };
+    if (event.id) {
+        await setDoc(doc(db!, "events", event.id), eventData);
+    } else {
+        const docRef = await addDoc(collection(db!, "events"), eventData);
+        eventData.id = docRef.id;
+        // Update with ID
+        await updateDoc(docRef, { id: docRef.id });
+    }
+    return eventData;
   } else {
-    newEvents = [...events, { ...event, id: String(Date.now()) }];
+    // Local Fallback
+    const events = await getEvents();
+    const newEvents = event.id ? events.map(e => e.id === event.id ? event : e) : [...events, { ...event, id: String(Date.now()) }];
+    localStorage.setItem('events', JSON.stringify(newEvents));
+    return event;
   }
-  localStorage.setItem('events', JSON.stringify(newEvents));
-  return event;
 };
 
 export const deleteEvent = async (id: string): Promise<void> => {
-  await delay(400);
-  const events = await getEvents();
-  localStorage.setItem('events', JSON.stringify(events.filter(e => e.id !== id)));
+  // Confirmation is handled in UI
+  const idString = String(id);
+  // Check lang for confirmation message
+  const currentLang = localStorage.getItem('app_language') || 'en';
+  const confirmMsg = dictionary['dash_delete_confirm'][currentLang as 'en'|'ro'|'fr'];
+  
+  if (!window.confirm(confirmMsg)) return;
+
+  if (isFirebaseActive()) {
+    await deleteDoc(doc(db!, "events", idString));
+  } else {
+    const events = await getEvents();
+    const updatedEvents = events.filter(e => String(e.id) !== idString);
+    localStorage.setItem('events', JSON.stringify(updatedEvents));
+  }
 };
 
 export const rsvpEvent = async (eventId: string, userId: string): Promise<void> => {
-  await delay(400);
-  const events = await getEvents();
-  const updatedEvents = events.map(e => {
-    if (e.id === eventId) {
-      const attendees = e.attendees.includes(userId) 
-        ? e.attendees.filter(id => id !== userId)
-        : [...e.attendees, userId];
-      return { ...e, attendees };
+  let isAdding = false;
+  let targetEvent: Event | undefined;
+  let targetUser: User | undefined;
+
+  // 1. Update Database
+  if (isFirebaseActive()) {
+    const eventRef = doc(db!, "events", eventId);
+    const eventSnap = await getDoc(eventRef);
+    
+    // Get User Data for Notification
+    const userSnap = await getDoc(doc(db!, "users", userId));
+    if (userSnap.exists()) targetUser = { id: userSnap.id, ...userSnap.data() } as User;
+
+    if (eventSnap.exists()) {
+       const event = eventSnap.data() as Event;
+       targetEvent = event;
+       if (event.attendees.includes(userId)) {
+         await updateDoc(eventRef, { attendees: arrayRemove(userId) });
+       } else {
+         isAdding = true;
+         await updateDoc(eventRef, { attendees: arrayUnion(userId) });
+       }
     }
-    return e;
-  });
-  localStorage.setItem('events', JSON.stringify(updatedEvents));
+  } else {
+    // Local Fallback
+    const events = await getEvents();
+    const users = await getUsers();
+    targetUser = users.find(u => u.id === userId);
+
+    const updated = events.map(e => {
+        if(e.id === eventId) {
+            targetEvent = e;
+            const attendees = e.attendees.includes(userId) ? e.attendees.filter(i => i !== userId) : [...e.attendees, userId];
+            isAdding = !e.attendees.includes(userId);
+            return { ...e, attendees };
+        }
+        return e;
+    });
+    localStorage.setItem('events', JSON.stringify(updated));
+  }
+
+  // 2. Trigger Notification if RSVPing YES
+  if (isAdding && targetEvent && targetUser) {
+    try {
+      await sendRSVPConfirmation(
+        { 
+          name: targetUser.name, 
+          email: targetUser.email, 
+          phone: targetUser.phoneNumber 
+        },
+        { 
+          title: targetEvent.title, 
+          date: targetEvent.date, 
+          time: targetEvent.time, 
+          location: targetEvent.location 
+        }
+      );
+    } catch (e) {
+      console.error("Failed to send notification:", e);
+    }
+  }
 };
 
-// --- Gallery Service ---
+// --- GALLERY SERVICE ---
+
 export const getGallery = async (): Promise<GalleryItem[]> => {
-  const stored = localStorage.getItem('gallery');
-  return stored ? JSON.parse(stored) : INITIAL_GALLERY;
+  if (isFirebaseActive()) {
+    const q = await getDocs(collection(db!, "gallery"));
+    return q.docs.map(d => ({ id: d.id, ...d.data() } as GalleryItem));
+  }
+  return JSON.parse(localStorage.getItem('gallery') || '[]');
 };
 
 export const addGalleryItem = async (item: Omit<GalleryItem, 'id' | 'dateAdded'>): Promise<GalleryItem> => {
-  await delay(500);
-  const items = await getGallery();
-  const newItem = { ...item, id: String(Date.now()), dateAdded: new Date().toISOString() };
-  localStorage.setItem('gallery', JSON.stringify([newItem, ...items]));
-  return newItem;
+  if (isFirebaseActive()) {
+    let imageUrl = item.url;
+    if (item.url.startsWith('data:')) {
+        const storageRef = ref(storage!, `gallery/${Date.now()}_img`);
+        const response = await fetch(item.url);
+        const blob = await response.blob();
+        await uploadBytes(storageRef, blob);
+        imageUrl = await getDownloadURL(storageRef);
+    }
+    
+    const newItem = { ...item, url: imageUrl, dateAdded: new Date().toISOString() };
+    const docRef = await addDoc(collection(db!, "gallery"), newItem);
+    return { ...newItem, id: docRef.id };
+  } else {
+    const items = await getGallery();
+    const newItem = { ...item, id: String(Date.now()), dateAdded: new Date().toISOString() };
+    localStorage.setItem('gallery', JSON.stringify([newItem, ...items]));
+    return newItem;
+  }
+};
+
+export const deleteGalleryItem = async (id: string): Promise<void> => {
+    if (isFirebaseActive()) {
+      await deleteDoc(doc(db!, "gallery", id));
+    } else {
+      const items = await getGallery();
+      localStorage.setItem('gallery', JSON.stringify(items.filter(i => i.id !== id)));
+    }
 };
 
 export const syncInstagram = async (): Promise<GalleryItem[]> => {
-  try {
-    // 1. Try Real API
-    const realPosts = await fetchRealInstagramPosts();
-    const formattedPosts: GalleryItem[] = realPosts.map((p: any) => ({
-      id: p.id,
-      url: p.media_url,
-      caption: p.caption || 'Instagram Post',
-      source: 'instagram',
-      dateAdded: new Date().toISOString()
-    }));
-    
-    // Merge
-    const current = await getGallery();
-    // Filter duplicates
-    const newItems = formattedPosts.filter(fp => !current.find(c => c.id === fp.id));
-    const updated = [...newItems, ...current];
-    localStorage.setItem('gallery', JSON.stringify(updated));
-    return updated;
-
-  } catch (e) {
-    // 2. Fallback to Mock if API Key missing or fails
-    console.log('Using Mock Instagram Data (Real API Key missing or invalid)');
-    await delay(1000);
-    const newPosts: GalleryItem[] = Array.from({ length: 3 }).map((_, i) => ({
-      id: `ig_${Date.now()}_${i}`,
-      url: `https://images.unsplash.com/photo-${1500000000000 + i * 1000}?auto=format&fit=crop&w=600&q=80`,
-      caption: 'Synced from Instagram #folk #tradition #romania',
-      source: 'instagram',
-      dateAdded: new Date().toISOString()
-    }));
-    
-    const current = await getGallery();
-    const updated = [...newPosts, ...current];
-    localStorage.setItem('gallery', JSON.stringify(updated));
-    return updated;
-  }
+    const posts = await fetchRealInstagramPosts().catch(() => []); 
+    return []; 
 };
 
-// --- Testimonial Service ---
+// --- TESTIMONIALS SERVICE ---
+
 export const getTestimonials = async (): Promise<Testimonial[]> => {
-  const stored = localStorage.getItem('testimonials');
-  return stored ? JSON.parse(stored) : INITIAL_TESTIMONIALS;
+  if (isFirebaseActive()) {
+    const q = await getDocs(collection(db!, "testimonials"));
+    return q.docs.map(d => ({ id: d.id, ...d.data() } as Testimonial));
+  }
+  return JSON.parse(localStorage.getItem('testimonials') || '[]');
 };
 
-export const addTestimonial = async (text: string, author: string, role: string): Promise<Testimonial> => {
-    await delay(500);
-    const list = await getTestimonials();
-    const newT: Testimonial = {
-        id: `t_${Date.now()}`,
-        author,
-        role,
-        text,
+export const addTestimonial = async (author: string, role: string, text: string): Promise<void> => {
+    const newTestimonial = { 
+        author, 
+        role, 
+        text, 
         approved: false // Default to false
     };
-    localStorage.setItem('testimonials', JSON.stringify([newT, ...list]));
-    return newT;
+
+    if (isFirebaseActive()) {
+        await addDoc(collection(db!, "testimonials"), newTestimonial);
+    } else {
+        const list = await getTestimonials();
+        const item = { id: String(Date.now()), ...newTestimonial };
+        localStorage.setItem('testimonials', JSON.stringify([...list, item]));
+    }
+};
+
+export const updateTestimonial = async (id: string, data: Partial<Testimonial>): Promise<void> => {
+    if (isFirebaseActive()) {
+        await updateDoc(doc(db!, "testimonials", id), data);
+    } else {
+        const list = await getTestimonials();
+        const updated = list.map(t => t.id === id ? { ...t, ...data } : t);
+        localStorage.setItem('testimonials', JSON.stringify(updated));
+    }
 };
 
 export const toggleTestimonialApproval = async (id: string): Promise<void> => {
-  await delay(300);
-  const list = await getTestimonials();
-  const updated = list.map(t => t.id === id ? { ...t, approved: !t.approved } : t);
-  localStorage.setItem('testimonials', JSON.stringify(updated));
-};
-
-export const deleteTestimonial = async (id: string): Promise<void> => {
-  await delay(300);
-  const list = await getTestimonials();
-  localStorage.setItem('testimonials', JSON.stringify(list.filter(t => t.id !== id)));
-};
-
-// --- Contact Service ---
-export const sendContactMessage = async (msg: Omit<ContactMessage, 'id' | 'date' | 'read'>): Promise<void> => {
-  await delay(500);
-  
-  // 1. Save to local Admin Database
-  const stored = localStorage.getItem('messages');
-  const messages = stored ? JSON.parse(stored) : [];
-  const newMessage = { ...msg, id: String(Date.now()), date: new Date().toISOString(), read: false };
-  localStorage.setItem('messages', JSON.stringify([newMessage, ...messages]));
-  
-  // 2. Send Real Email (Integration)
-  try {
-    await sendRealEmail(msg);
-  } catch (e) {
-    console.error('Email failed to send (check configuration in services/integrations.ts)');
+  if (isFirebaseActive()) {
+    const tRef = doc(db!, "testimonials", id);
+    const snap = await getDoc(tRef);
+    if (snap.exists()) {
+        await updateDoc(tRef, { approved: !snap.data().approved });
+    }
+  } else {
+    const list = await getTestimonials();
+    const updated = list.map(t => t.id === id ? { ...t, approved: !t.approved } : t);
+    localStorage.setItem('testimonials', JSON.stringify(updated));
   }
 };
 
-export const getMessages = async (): Promise<ContactMessage[]> => {
-  const stored = localStorage.getItem('messages');
-  return stored ? JSON.parse(stored) : [];
+export const deleteTestimonial = async (id: string): Promise<void> => {
+   if (isFirebaseActive()) {
+     await deleteDoc(doc(db!, "testimonials", id));
+   } else {
+     const list = await getTestimonials();
+     localStorage.setItem('testimonials', JSON.stringify(list.filter(t => t.id !== id)));
+   }
 };
 
-// --- Page Content Service (CMS) ---
+export const deleteUser = async (id: string): Promise<void> => {
+    if (isFirebaseActive()) {
+      await deleteDoc(doc(db!, "users", id));
+    } else {
+      const users = await getUsers();
+      localStorage.setItem('users', JSON.stringify(users.filter(u => u.id !== id)));
+    }
+};
+
+// --- CONTENT MANAGEMENT SERVICE ---
+
 export const getPageContent = async (): Promise<PageContent[]> => {
-  await delay(200);
-  const stored = localStorage.getItem('page_content');
-  return stored ? JSON.parse(stored) : INITIAL_CONTENT;
+  if (isFirebaseActive()) {
+    const q = await getDocs(collection(db!, "content"));
+    if (q.empty) return INITIAL_CONTENT;
+    return q.docs.map(d => ({ id: d.id, ...d.data() } as PageContent));
+  }
+  return JSON.parse(localStorage.getItem('page_content') || JSON.stringify(INITIAL_CONTENT));
 };
 
 export const updatePageContent = async (id: string, newText: { en: string; ro: string; fr: string }): Promise<void> => {
-  await delay(500);
-  const content = await getPageContent();
-  const updatedContent = content.map(c => c.id === id ? { ...c, text: newText } : c);
-  localStorage.setItem('page_content', JSON.stringify(updatedContent));
+  if (isFirebaseActive()) {
+    const q = await getDocs(collection(db!, "content"));
+    const existing = q.docs.find(d => d.data().id === id);
+    
+    if (existing) {
+        await updateDoc(doc(db!, "content", existing.id), { text: newText });
+    } else {
+        await addDoc(collection(db!, "content"), { id, description: id, text: newText });
+    }
+  } else {
+    const content = await getPageContent();
+    const updatedContent = content.map(c => c.id === id ? { ...c, text: newText } : c);
+    localStorage.setItem('page_content', JSON.stringify(updatedContent));
+  }
+};
+
+export const sendContactMessage = async (msg: any): Promise<void> => {
+    await sendRealEmail(msg);
+    if (isFirebaseActive()) {
+        await addDoc(collection(db!, "messages"), { ...msg, date: new Date().toISOString() });
+    }
 };

@@ -8,6 +8,7 @@ export interface User {
   email: string;
   role: UserRole;
   avatar?: string;
+  phoneNumber?: string; // Added for SMS notifications
 }
 
 export interface Event {

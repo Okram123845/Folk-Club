@@ -16,9 +16,9 @@ export interface Event {
   title: string;
   date: string;
   time: string; // Start Time
-  endTime?: string; // End Time (New)
+  endTime?: string; // End Time
   location: string;
-  description: string;
+  description: string | { en: string; ro: string; fr: string };
   image?: string;
   type: 'performance' | 'workshop' | 'social';
   attendees: string[]; // User IDs
@@ -30,6 +30,10 @@ export interface GalleryItem {
   caption: string;
   source: 'upload' | 'instagram';
   dateAdded: string;
+  type?: 'image' | 'video'; 
+  eventId?: string; 
+  approved: boolean; // New field for moderation
+  uploadedBy?: string; // New field to track contributor
 }
 
 export interface Testimonial {
@@ -57,11 +61,20 @@ export interface InstagramPost {
 }
 
 export interface PageContent {
-  id: string; // e.g., 'about_text', 'contact_subtitle'
-  description: string; // For the admin to know what they are editing
+  id: string; 
+  description: string; 
   text: {
     en: string;
     ro: string;
     fr: string;
   };
+}
+
+export interface Resource {
+  id: string;
+  title: string;
+  description: string;
+  url: string;
+  category: 'music' | 'choreography' | 'costume' | 'document';
+  dateAdded: string;
 }

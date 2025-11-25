@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { useTranslation } from '../services/translations';
@@ -8,9 +9,10 @@ interface NavbarProps {
   onLoginClick: () => void;
   onLogoutClick: () => void;
   onDashboardClick: () => void;
+  onNavigate: (sectionId: string) => void; // New Prop for routing
 }
 
-const Navbar: React.FC<NavbarProps> = ({ user, onLoginClick, onLogoutClick, onDashboardClick }) => {
+const Navbar: React.FC<NavbarProps> = ({ user, onLoginClick, onLogoutClick, onDashboardClick, onNavigate }) => {
   const { t } = useTranslation();
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -31,14 +33,9 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLoginClick, onLogoutClick, onDa
     return () => { document.body.style.overflow = 'unset'; };
   }, [mobileMenuOpen]);
 
-  const scrollToSection = (id: string) => {
+  const handleNavClick = (id: string) => {
     setMobileMenuOpen(false);
-    setTimeout(() => {
-      const element = document.getElementById(id);
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth' });
-      }
-    }, 300);
+    onNavigate(id);
   };
 
   const navLinks = [
@@ -50,11 +47,12 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLoginClick, onLogoutClick, onDa
   ];
 
   return (
-    <nav className={`fixed top-0 left-0 w-full z-50 transition-all duration-300 ${isScrolled || mobileMenuOpen ? 'bg-roBlue shadow-lg py-3' : 'bg-transparent py-4 md:py-6'}`}>
+    <nav className={`fixed top-0 left-0 w-full z-50 transition-all duration-300 ${isScrolled || mobileMenuOpen ? 'bg-roBlue shadow-lg py-3' : 'bg-roBlue/90 md:bg-transparent py-4 md:py-6'}`}>
       <div className="container mx-auto px-4 md:px-6 flex justify-between items-center relative z-50">
-        <a href="#" onClick={(e) => { e.preventDefault(); scrollToSection('home'); }} className="text-white font-serif font-bold text-xl md:text-2xl flex items-center gap-2 select-none relative z-50">
+        <a href="#" onClick={(e) => { e.preventDefault(); handleNavClick('home'); }} className="text-white font-serif font-bold text-xl md:text-2xl flex items-center gap-2 select-none relative z-50">
           <span className="text-2xl md:text-3xl">🇷🇴</span>
-          <span>Romanian Kitchener Folk Club</span>
+          <span className="hidden sm:inline">Romanian Kitchener Folk Club</span>
+          <span className="sm:hidden">RK Folk Club</span>
         </a>
 
         {/* Desktop Menu */}
@@ -62,7 +60,7 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLoginClick, onLogoutClick, onDa
           {navLinks.map(link => (
             <button 
               key={link.id}
-              onClick={() => scrollToSection(link.id)}
+              onClick={() => handleNavClick(link.id)}
               className="text-white hover:text-roYellow font-medium transition-colors relative group text-sm xl:text-base py-2"
             >
               {link.name}
@@ -127,7 +125,7 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLoginClick, onLogoutClick, onDa
           {navLinks.map(link => (
             <button 
               key={link.id}
-              onClick={() => scrollToSection(link.id)}
+              onClick={() => handleNavClick(link.id)}
               className="text-white text-2xl font-serif font-bold text-left border-b border-white/10 pb-3 hover:text-roYellow transition-colors"
             >
               {link.name}
@@ -172,3 +170,4 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLoginClick, onLogoutClick, onDa
 };
 
 export default Navbar;
+    

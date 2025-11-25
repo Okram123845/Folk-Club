@@ -1,10 +1,9 @@
 
-import { User, Event, GalleryItem, Testimonial, ContactMessage, UserRole, PageContent } from '../types';
+import { User, Event, GalleryItem, Testimonial, ContactMessage, UserRole, PageContent, Resource } from '../types';
 import { auth, db, storage } from './firebase';
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
-  signOut, 
   updateProfile 
 } from 'firebase/auth';
 import { 
@@ -37,7 +36,11 @@ const INITIAL_EVENTS: Event[] = [
     time: '14:00',
     endTime: '18:00',
     location: 'Community Center',
-    description: 'This is a demo event. Connect Firebase to see real events.',
+    description: {
+      en: 'This is a demo event. Connect Firebase to see real events.',
+      ro: 'Acesta este un eveniment demo. Conectați Firebase pentru a vedea evenimente reale.',
+      fr: 'Ceci est un événement de démonstration. Connectez Firebase pour voir les événements réels.'
+    },
     type: 'performance',
     attendees: [],
     image: 'https://images.unsplash.com/photo-1541963463532-d68292c34b19'
@@ -81,6 +84,25 @@ const INITIAL_CONTENT: PageContent[] = [
       fr: 'Club Folklorique Roumain de Kitchener. Préserver le patrimoine avec fierté.'
     }
   }
+];
+
+const INITIAL_RESOURCES: Resource[] = [
+    {
+        id: '1',
+        title: 'Hora Unirii Steps',
+        description: 'Basic steps for the Hora Unirii dance.',
+        url: 'https://www.youtube.com/watch?v=example',
+        category: 'choreography',
+        dateAdded: '2024-01-01'
+    },
+    {
+        id: '2',
+        title: 'Costume Care Guide',
+        description: 'How to wash and preserve traditional Ie.',
+        url: '#',
+        category: 'costume',
+        dateAdded: '2024-01-02'
+    }
 ];
 
 // Helper to check if Firebase is Active
@@ -217,7 +239,7 @@ export const saveEvent = async (event: Event): Promise<Event> => {
 };
 
 export const deleteEvent = async (id: string): Promise<void> => {
-  // Confirmation is handled in UI, remove here to avoid double popup
+  // Confirmation is handled in UI
   const idString = String(id);
   
   if (isFirebaseActive()) {
@@ -299,9 +321,12 @@ export const rsvpEvent = async (eventId: string, userId: string): Promise<void> 
 export const getGallery = async (): Promise<GalleryItem[]> => {
   if (isFirebaseActive()) {
     const q = await getDocs(collection(db!, "gallery"));
-    return q.docs.map(d => ({ id: d.id, ...d.data() } as GalleryItem));
+    const items = q.docs.map(d => ({ id: d.id, ...d.data() } as GalleryItem));
+    // Backwards compatibility: if approved is undefined, treat as true (legacy items)
+    return items.map(i => ({...i, approved: i.approved === undefined ? true : i.approved}));
   }
-  return JSON.parse(localStorage.getItem('gallery') || '[]');
+  const items = JSON.parse(localStorage.getItem('gallery') || '[]');
+  return items.map((i: GalleryItem) => ({...i, approved: i.approved === undefined ? true : i.approved}));
 };
 
 export const addGalleryItem = async (item: Omit<GalleryItem, 'id' | 'dateAdded'>): Promise<GalleryItem> => {
@@ -323,6 +348,20 @@ export const addGalleryItem = async (item: Omit<GalleryItem, 'id' | 'dateAdded'>
     const newItem = { ...item, id: String(Date.now()), dateAdded: new Date().toISOString() };
     localStorage.setItem('gallery', JSON.stringify([newItem, ...items]));
     return newItem;
+  }
+};
+
+export const toggleGalleryApproval = async (id: string): Promise<void> => {
+  if (isFirebaseActive()) {
+    const ref = doc(db!, "gallery", id);
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      await updateDoc(ref, { approved: !snap.data().approved });
+    }
+  } else {
+    const items = await getGallery();
+    const updated = items.map(i => i.id === id ? { ...i, approved: !i.approved } : i);
+    localStorage.setItem('gallery', JSON.stringify(updated));
   }
 };
 
@@ -406,6 +445,47 @@ export const deleteUser = async (id: string): Promise<void> => {
     } else {
       const users = await getUsers();
       localStorage.setItem('users', JSON.stringify(users.filter(u => u.id !== id)));
+    }
+};
+
+// --- RESOURCE SERVICE ---
+
+export const getResources = async (): Promise<Resource[]> => {
+    if (isFirebaseActive()) {
+        const q = await getDocs(collection(db!, "resources"));
+        return q.docs.map(d => ({ id: d.id, ...d.data() } as Resource));
+    }
+    return JSON.parse(localStorage.getItem('resources') || JSON.stringify(INITIAL_RESOURCES));
+};
+
+export const addResource = async (res: Omit<Resource, 'id' | 'dateAdded'>): Promise<void> => {
+    let finalUrl = res.url;
+    
+    // Check if URL is base64 file data, upload if Firebase active
+    if (isFirebaseActive() && res.url.startsWith('data:')) {
+        const storageRef = ref(storage!, `resources/${Date.now()}_file`);
+        const response = await fetch(res.url);
+        const blob = await response.blob();
+        await uploadBytes(storageRef, blob);
+        finalUrl = await getDownloadURL(storageRef);
+    }
+
+    const newRes = { ...res, url: finalUrl, dateAdded: new Date().toISOString() };
+    
+    if (isFirebaseActive()) {
+        await addDoc(collection(db!, "resources"), newRes);
+    } else {
+        const list = await getResources();
+        localStorage.setItem('resources', JSON.stringify([...list, { ...newRes, id: String(Date.now()) }]));
+    }
+};
+
+export const deleteResource = async (id: string): Promise<void> => {
+    if (isFirebaseActive()) {
+        await deleteDoc(doc(db!, "resources", id));
+    } else {
+        const list = await getResources();
+        localStorage.setItem('resources', JSON.stringify(list.filter(r => r.id !== id)));
     }
 };
 

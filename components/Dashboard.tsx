@@ -7,7 +7,7 @@ import {
   addGalleryItem, 
   syncInstagram, 
   getUsers, 
-  updateUserRole,
+  updateUserRole, 
   updateUserProfile,
   getTestimonials,
   addTestimonial,
@@ -38,7 +38,7 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateData, onClose }) => {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const [activeTab, setActiveTab] = useState(user.role === 'admin' ? 'events' : 'schedule');
   const [isSyncing, setIsSyncing] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -68,7 +68,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   const [memberStory, setMemberStory] = useState('');
 
   const [newEvent, setNewEvent] = useState<Partial<Event>>({ type: 'performance' });
-  const [eventDescLang, setEventDescLang] = useState<'en' | 'ro' | 'fr'>('en');
   
   // Resource Management State
   const [newResource, setNewResource] = useState<Partial<Resource>>({ category: 'document' });
@@ -143,15 +142,26 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   };
 
   const handleEditEvent = (ev: Event) => {
-    setNewEvent(ev);
-    if (typeof ev.description === 'string') {
-        setNewEvent({
-            ...ev,
-            description: { en: ev.description, ro: ev.description, fr: ev.description }
-        });
+    let description = ev.description;
+    
+    // Normalize string description to multi-language object
+    if (typeof description === 'string') {
+        description = { en: description, ro: description, fr: description };
+    } else if (!description) {
+        description = { en: '', ro: '', fr: '' };
     } else {
-        setNewEvent(ev);
+        // Ensure all keys exist
+        description = {
+            en: (description as any).en || '',
+            ro: (description as any).ro || '',
+            fr: (description as any).fr || ''
+        };
     }
+
+    setNewEvent({
+      ...ev,
+      description: description
+    });
     
     if (eventFormTopRef.current) {
       eventFormTopRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -233,6 +243,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   const handleEventImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Limit file size (2MB for demo, 10MB for live)
+      const limit = isLive ? 10 * 1024 * 1024 : 2 * 1024 * 1024;
+      if (file.size > limit) {
+        showToast(isLive ? "File too large (Max 10MB)" : "Demo Mode: Max 2MB allowed", 'error');
+        e.target.value = '';
+        return;
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => {
         setNewEvent({ ...newEvent, image: reader.result as string });
@@ -270,6 +288,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Limit file size (2MB for demo, 10MB for live)
+    const limit = isLive ? 10 * 1024 * 1024 : 2 * 1024 * 1024;
+    if (file.size > limit) {
+      showToast(isLive ? "File too large (Max 10MB)" : "Demo Mode: Max 2MB allowed", 'error');
+      e.target.value = '';
+      return;
+    }
+
     try {
       const reader = new FileReader();
       reader.onloadend = async () => {
@@ -389,21 +416,35 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
 
   const handleAddResource = async (e: React.FormEvent) => {
       e.preventDefault();
-      if(!newResource.title || !newResource.url) return;
+      if(!newResource.title || (!newResource.url && resourceInputType === 'url')) {
+          showToast('Please fill in required fields', 'error');
+          return;
+      }
+      
       try {
           await addResource(newResource as Resource);
           setNewResource({ category: 'document' });
           setResourceInputType('url');
           loadCommonData();
           showToast('Resource added successfully', 'success');
-      } catch(e) {
-          showToast('Failed to add resource', 'error');
+      } catch(e: any) {
+          console.error(e);
+          showToast(e.message || 'Failed to add resource', 'error');
       }
   };
   
   const handleResourceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Limit file size to prevent crash
+      const limit = isLive ? 50 * 1024 * 1024 : 2 * 1024 * 1024;
+      
+      if (file.size > limit) {
+          showToast(isLive ? "File too large (Max 50MB)" : "Demo Mode: Max 2MB. Connect Firebase for larger files.", 'error');
+          e.target.value = ''; // Clear input
+          return;
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => {
          setNewResource({...newResource, url: reader.result as string});
@@ -466,7 +507,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
             <NavButton id="users" label={t('dash_tab_users')} icon="👥" />
             <NavButton id="testimonials" label={t('dash_tab_testimonials')} icon="💬" />
             <NavButton id="resources" label={t('dash_tab_resources')} icon="📚" />
-            <NavButton id="content" label="Page Content" icon="✏️" />
+            <NavButton id="content" label={t('dash_tab_content')} icon="✏️" />
           </>
         )}
         {user.role === 'member' && (
@@ -480,29 +521,35 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
       <div className="p-4 border-t border-white/10 space-y-4 bg-slate-800/50">
         <LanguageSwitcher className="justify-center" />
         <button onClick={onClose} className="w-full text-gray-400 hover:text-white hover:bg-red-900/30 py-2 rounded transition-colors text-sm flex items-center justify-center gap-2">
-          <span>🚪</span> {t('dash_back')}
+          <span>🚪</span> {t('dash_exit')}
         </button>
       </div>
     </div>
   );
 
+  const getEventDescription = () => {
+    if (!newEvent.description) return '';
+    if (typeof newEvent.description === 'string') return newEvent.description;
+    return (newEvent.description as any)[language] || '';
+  };
+
   const renderAdminEvents = () => (
     <div className="space-y-8 animate-fade-in-up pb-10" ref={eventFormTopRef}>
       <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
         <h3 className="text-xl font-bold mb-6 text-slate-800 border-b pb-2 flex items-center gap-2">
-          <span>{newEvent.id ? '✏️' : '✨'}</span> {newEvent.id ? 'Edit Event' : t('dash_add_event')}
+          <span>{newEvent.id ? '✏️' : '✨'}</span> {t('dash_add_event')}
         </h3>
         <form onSubmit={handleAddEvent} className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-1">
             <label htmlFor="event-title" className="block text-sm font-bold text-gray-700">{t('dash_event_title')}</label>
             <input 
-              id="event-title" type="text" placeholder="e.g. Spring Festival" 
+              id="event-title" type="text" placeholder={t('dash_event_title_ph')}
               className="p-3 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-roBlue outline-none" 
               value={newEvent.title || ''} onChange={e => setNewEvent({...newEvent, title: e.target.value})} required 
             />
           </div>
           <div className="space-y-1">
-            <label htmlFor="event-type" className="block text-sm font-bold text-gray-700">Type</label>
+            <label htmlFor="event-type" className="block text-sm font-bold text-gray-700">{t('dash_gal_type')}</label>
             <select 
               id="event-type"
               className="p-3 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-roBlue outline-none bg-white" 
@@ -523,7 +570,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
           </div>
           <div className="grid grid-cols-2 gap-4 md:col-span-2">
             <div className="space-y-1">
-              <label htmlFor="event-time" className="block text-sm font-bold text-gray-700">Start Time (EST)</label>
+              <label htmlFor="event-time" className="block text-sm font-bold text-gray-700">{t('events_label_time')} (Start)</label>
               <input 
                 id="event-time" type="time" 
                 className="p-3 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-roBlue outline-none" 
@@ -531,7 +578,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
               />
             </div>
             <div className="space-y-1">
-              <label htmlFor="event-endtime" className="block text-sm font-bold text-gray-700">End Time (EST)</label>
+              <label htmlFor="event-endtime" className="block text-sm font-bold text-gray-700">{t('events_label_time')} (End)</label>
               <input 
                 id="event-endtime" type="time" 
                 className="p-3 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-roBlue outline-none" 
@@ -542,7 +589,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
           <div className="md:col-span-2 space-y-1">
             <label htmlFor="event-location" className="block text-sm font-bold text-gray-700">{t('contact_label_location')}</label>
             <input 
-              id="event-location" type="text" placeholder="e.g. Main Hall" 
+              id="event-location" type="text" placeholder={t('dash_event_loc_ph')}
               className="p-3 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-roBlue outline-none" 
               value={newEvent.location || ''} onChange={e => setNewEvent({...newEvent, location: e.target.value})} required 
             />
@@ -562,31 +609,37 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
                 )}
              </div>
           </div>
+          
           <div className="md:col-span-2 space-y-3">
             <div className="flex items-center justify-between">
-               <label htmlFor="event-description" className="block text-sm font-bold text-gray-700">{t('dash_event_desc')}</label>
-               <div className="flex gap-2">
-                 {['en', 'ro', 'fr'].map(lang => (
-                   <button key={lang} type="button" onClick={() => setEventDescLang(lang as any)} className={`px-2 py-1 text-xs font-bold rounded ${eventDescLang === lang ? 'bg-roBlue text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}>{lang.toUpperCase()}</button>
-                 ))}
-               </div>
+               <label htmlFor="event-description" className="block text-sm font-bold text-gray-700">{t('dash_event_desc')} ({language.toUpperCase()})</label>
             </div>
             <textarea 
-              id="event-description" placeholder={`Event details in ${eventDescLang.toUpperCase()}...`} 
+              id="event-description" placeholder={t('dash_event_desc_ph')}
               className="p-3 border border-gray-300 rounded-lg w-full min-h-[100px] focus:ring-2 focus:ring-roBlue outline-none transition-all" 
-              value={typeof newEvent.description === 'object' ? (newEvent.description as any)[eventDescLang] || '' : newEvent.description || ''}
+              value={getEventDescription()}
               onChange={e => {
-                  const currentDesc = typeof newEvent.description === 'object' ? { ...newEvent.description } : { en: newEvent.description || '', ro: newEvent.description || '', fr: newEvent.description || '' };
-                  (currentDesc as any)[eventDescLang] = e.target.value;
-                  setNewEvent({...newEvent, description: currentDesc as any});
-              }} 
+                  let currentDescObj = newEvent.description;
+                  if (typeof currentDescObj !== 'object' || currentDescObj === null) {
+                      const val = (currentDescObj as string) || '';
+                      currentDescObj = { en: val, ro: val, fr: val };
+                  }
+                  setNewEvent({
+                      ...newEvent, 
+                      description: { ...(currentDescObj as any), [language]: e.target.value }
+                  });
+              }}
             />
+            <p className="text-xs text-gray-500 italic">
+               * Editing for <strong>{language === 'ro' ? 'Romanian' : language === 'fr' ? 'French' : 'English'}</strong>. Switch dashboard language to edit other versions.
+            </p>
           </div>
+
           <div className="md:col-span-2 flex gap-4">
             {newEvent.id && (
-              <button type="button" onClick={handleCancelEdit} className="flex-1 bg-gray-500 text-white py-4 rounded-lg hover:bg-gray-600 shadow-lg font-bold text-lg flex items-center justify-center gap-2"><span>🚫</span> Cancel</button>
+              <button type="button" onClick={handleCancelEdit} className="flex-1 bg-gray-500 text-white py-4 rounded-lg hover:bg-gray-600 shadow-lg font-bold text-lg flex items-center justify-center gap-2"><span>🚫</span> {t('dash_cancel')}</button>
             )}
-            <button type="submit" className="flex-1 bg-green-600 text-white py-4 rounded-lg hover:bg-green-700 shadow-lg font-bold text-lg flex items-center justify-center gap-2"><span>💾</span> {newEvent.id ? 'Update Event' : t('dash_save')}</button>
+            <button type="submit" className="flex-1 bg-green-600 text-white py-4 rounded-lg hover:bg-green-700 shadow-lg font-bold text-lg flex items-center justify-center gap-2"><span>💾</span> {newEvent.id ? t('dash_update') : t('dash_save')}</button>
           </div>
         </form>
       </div>
@@ -621,7 +674,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
                                   <td className="p-4 text-gray-600 font-medium">{new Date(ev.date).toLocaleDateString()} <br/><span className="text-xs text-gray-400">{ev.time} EST</span></td>
                                   <td className="p-4">
                                       <div className="flex flex-col items-start gap-1">
-                                          <span className="bg-blue-100 text-blue-800 py-1 px-3 rounded-full text-xs font-bold">{attendeesList.length} Attendees</span>
+                                          <span className="bg-blue-100 text-blue-800 py-1 px-3 rounded-full text-xs font-bold">{attendeesList.length} {t('dash_table_attendees')}</span>
                                           {attendeesList.length > 0 && (
                                               <details className="text-xs text-gray-600 w-full mt-1 border border-blue-100 rounded bg-blue-50/50 p-2">
                                                   <summary className="cursor-pointer hover:text-roBlue font-bold select-none flex items-center gap-1"><span>👥</span> View List</summary>
@@ -674,7 +727,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
                   <label className="block text-sm font-bold text-gray-700 mb-1">{t('dash_gal_type')}</label>
                   <div className="flex gap-2">
                       <button onClick={() => setMediaType('image')} className={`flex-1 py-2 rounded text-sm font-bold ${mediaType === 'image' ? 'bg-roBlue text-white' : 'bg-gray-100'}`}>Image</button>
-                      <button onClick={() => setMediaType('video')} className={`flex-1 py-2 rounded text-sm font-bold ${mediaType === 'video' ? 'bg-roBlue text-white' : 'bg-gray-100'}`}>Video URL</button>
+                      <button onClick={() => setMediaType('video')} className={`flex-1 py-2 rounded text-sm font-bold ${mediaType === 'video' ? 'bg-roBlue text-white' : 'bg-gray-100'}`}>{t('dash_gal_video_url')}</button>
                   </div>
               </div>
           </div>
@@ -703,7 +756,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
                        Add
                     </button>
                 </div>
-                <p className="text-xs text-gray-500">Supports YouTube, Vimeo links.</p>
+                <p className="text-xs text-gray-500">{t('dash_gal_video_hint')}</p>
              </div>
           )}
         </div>
@@ -739,7 +792,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
       )}
 
       {/* Approved Gallery */}
-      <h3 className="font-bold text-lg text-slate-800">Approved Media</h3>
+      <h3 className="font-bold text-lg text-slate-800">{t('dash_gal_approved')}</h3>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
         {approvedItems.map(item => (
           <div key={item.id} className="relative group aspect-square bg-gray-200 rounded-xl overflow-hidden shadow-sm">
@@ -818,7 +871,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
                 <form onSubmit={handleSaveTestimonialEdit} className="space-y-4">
                     <div><label className="block text-sm font-bold text-gray-700 mb-1">{t('dash_test_author')}</label><input type="text" className="w-full p-2 border rounded-lg" value={editingTestimonial.author} onChange={e => setEditingTestimonial({...editingTestimonial, author: e.target.value})}/></div>
                     <div><label className="block text-sm font-bold text-gray-700 mb-1">{t('dash_test_content')}</label><textarea className="w-full p-2 border rounded-lg h-32" value={editingTestimonial.text} onChange={e => setEditingTestimonial({...editingTestimonial, text: e.target.value})}/></div>
-                    <div className="flex gap-2 justify-end"><button type="button" onClick={() => setEditingTestimonial(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button><button type="submit" className="px-4 py-2 bg-roBlue text-white rounded-lg hover:bg-blue-900">{t('dash_save')}</button></div>
+                    <div className="flex gap-2 justify-end"><button type="button" onClick={() => setEditingTestimonial(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">{t('dash_cancel')}</button><button type="submit" className="px-4 py-2 bg-roBlue text-white rounded-lg hover:bg-blue-900">{t('dash_save')}</button></div>
                 </form>
              </div>
           </div>
@@ -854,20 +907,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   const renderAdminContent = () => (
     <div className="space-y-6 animate-fade-in-up pb-10">
       <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
-        <h3 className="text-xl font-bold mb-6 text-slate-800 border-b pb-2 flex items-center gap-2"><span>✏️</span> Manage Page Content</h3>
+        <h3 className="text-xl font-bold mb-6 text-slate-800 border-b pb-2 flex items-center gap-2"><span>✏️</span> {t('dash_content_title')}</h3>
         <div className="space-y-6">
           <div>
-             <label htmlFor="content-selector" className="block text-sm font-bold text-gray-700 mb-2">Select Section to Edit</label>
+             <label htmlFor="content-selector" className="block text-sm font-bold text-gray-700 mb-2">{t('dash_content_select')}</label>
              <select id="content-selector" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-roBlue outline-none bg-white font-bold text-gray-700" value={selectedContentId} onChange={(e) => handleContentSelect(e.target.value)}>
                {pageContents.map(c => <option key={c.id} value={c.id}>{c.description}</option>)}
              </select>
           </div>
           <div className="grid gap-6">
-            <div className="space-y-1"><label className="block text-sm font-bold text-gray-700">🇬🇧 English Text</label><textarea rows={4} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-roBlue outline-none font-medium" value={editContentText.en} onChange={(e) => setEditContentText({...editContentText, en: e.target.value})}/></div>
-            <div className="space-y-1"><label className="block text-sm font-bold text-gray-700">🇷🇴 Romanian Text</label><textarea rows={4} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-roBlue outline-none font-medium" value={editContentText.ro} onChange={(e) => setEditContentText({...editContentText, ro: e.target.value})}/></div>
-            <div className="space-y-1"><label className="block text-sm font-bold text-gray-700">🇫🇷 French Text</label><textarea rows={4} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-roBlue outline-none font-medium" value={editContentText.fr} onChange={(e) => setEditContentText({...editContentText, fr: e.target.value})}/></div>
+            <div className="space-y-1"><label className="block text-sm font-bold text-gray-700">🇬🇧 {t('dash_content_en')}</label><textarea rows={4} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-roBlue outline-none font-medium" value={editContentText.en} onChange={(e) => setEditContentText({...editContentText, en: e.target.value})}/></div>
+            <div className="space-y-1"><label className="block text-sm font-bold text-gray-700">🇷🇴 {t('dash_content_ro')}</label><textarea rows={4} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-roBlue outline-none font-medium" value={editContentText.ro} onChange={(e) => setEditContentText({...editContentText, ro: e.target.value})}/></div>
+            <div className="space-y-1"><label className="block text-sm font-bold text-gray-700">🇫🇷 {t('dash_content_fr')}</label><textarea rows={4} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-roBlue outline-none font-medium" value={editContentText.fr} onChange={(e) => setEditContentText({...editContentText, fr: e.target.value})}/></div>
           </div>
-          <button onClick={handleSaveContent} className="w-full bg-green-600 text-white py-4 rounded-lg hover:bg-green-700 shadow-lg font-bold text-lg flex items-center justify-center gap-2"><span>💾</span> Save Changes</button>
+          <button onClick={handleSaveContent} className="w-full bg-green-600 text-white py-4 rounded-lg hover:bg-green-700 shadow-lg font-bold text-lg flex items-center justify-center gap-2"><span>💾</span> {t('dash_content_save')}</button>
         </div>
       </div>
     </div>
@@ -943,7 +996,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
                           </div>
                       </div>
                   ))}
-                  {resources.length === 0 && <p className="p-4 text-center text-gray-500 italic">No resources available.</p>}
+                  {resources.length === 0 && <p className="p-4 text-center text-gray-500 italic">{t('dash_res_empty')}</p>}
               </div>
           </div>
       </div>
@@ -1017,7 +1070,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
                       <div key={cat} className="bg-white p-6 rounded-xl shadow-md border-t-4 border-roBlue">
                           <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><span>{icon}</span> {t(titleKey)}</h3>
                           <ul className="space-y-3">
-                              {catResources.map(res => (
+                              {catResources.map(res => {
+                                  // Determine if it's a data URL (file upload in demo mode)
+                                  const isDataUrl = res.url.startsWith('data:');
+                                  
+                                  return (
                                   <li key={res.id} className="block p-3 rounded-lg bg-gray-50 border border-gray-100 hover:border-roBlue transition-all">
                                       {/* Content Renderer Based on Category */}
                                       {cat === 'music' ? (
@@ -1042,19 +1099,33 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
                                             <p className="text-xs text-gray-500">{res.description}</p>
                                          </div>
                                       ) : (
-                                          <a href={res.url} target="_blank" rel="noreferrer" className="block group">
-                                              <div className="font-bold text-roBlue group-hover:underline">{res.title}</div>
+                                          <a 
+                                            href={res.url} 
+                                            target={isDataUrl ? undefined : "_blank"} 
+                                            rel="noreferrer" 
+                                            download={isDataUrl ? res.title : undefined} // Force download if data URL
+                                            className="block group"
+                                          >
+                                              <div className="font-bold text-roBlue group-hover:underline flex items-center gap-2">
+                                                {res.title}
+                                                {isDataUrl ? (
+                                                   <span className="text-xs font-normal text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">⬇ Download</span>
+                                                ) : (
+                                                   <span className="text-xs font-normal text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">↗ Opens in new tab</span>
+                                                )}
+                                              </div>
                                               <div className="text-sm text-gray-500 mt-1">{res.description}</div>
                                           </a>
                                       )}
                                   </li>
-                              ))}
+                                  );
+                              })}
                           </ul>
                       </div>
                   );
               })}
           </div>
-          {resources.length === 0 && <p className="text-center text-gray-500 py-10">No resources available at the moment.</p>}
+          {resources.length === 0 && <p className="text-center text-gray-500 py-10">{t('dash_res_empty')}</p>}
       </div>
   );
 
@@ -1071,7 +1142,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
       </div>
       <div className="flex-1 flex flex-col h-full overflow-hidden w-full pt-16 md:pt-0 bg-slate-50 relative">
         <header className="flex-shrink-0 px-6 py-4 md:py-8 border-b border-gray-200 bg-white/50 backdrop-blur-sm flex justify-between items-center z-10">
-             <div><h1 className="text-2xl md:text-3xl font-serif font-bold text-roBlue capitalize">{activeTab}</h1><p className="text-gray-500 text-sm hidden sm:block mt-1">{t('dash_logged_in')} <span className="font-bold text-slate-800">{user.email}</span></p></div>
+             <div><h1 className="text-2xl md:text-3xl font-serif font-bold text-roBlue capitalize">{t(`dash_tab_${activeTab}` as any) || activeTab}</h1><p className="text-gray-500 text-sm hidden sm:block mt-1">{t('dash_logged_in')} <span className="font-bold text-slate-800">{user.email}</span></p></div>
         </header>
         <main className="flex-1 overflow-y-auto p-4 md:p-8">
           <div className="max-w-6xl mx-auto">

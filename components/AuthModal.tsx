@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { loginUser, registerUser } from '../services/mockService';
 import { User } from '../types';
@@ -34,7 +35,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }
       onLoginSuccess(user);
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+      setError(err.message || t('auth_error_generic'));
     } finally {
       setLoading(false);
     }
@@ -96,12 +97,12 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }
           </div>
           <div>
             <label htmlFor="auth-password" className="block text-sm font-bold text-gray-700 mb-1">
-              Password
+              {t('auth_password')}
             </label>
             <input
               id="auth-password"
               type="password"
-              placeholder="Password"
+              placeholder={t('auth_password')}
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-roBlue outline-none"
               value={password}
               onChange={e => setPassword(e.target.value)}

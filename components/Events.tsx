@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Event, User } from '../types';
-import { useTranslation } from '../services/translations';
+import { useTranslation, getLocalizedText } from '../services/translations';
 
 interface EventsProps {
   events: Event[];
@@ -32,9 +32,7 @@ const Events: React.FC<EventsProps> = ({ events, user, onRsvp, onViewArchive, on
         const endH = (h + 2).toString().padStart(2, '0');
         end = formatDateTime(event.date, `${endH}:${m}`);
     }
-    const description = typeof event.description === 'object' 
-      ? (event.description as any)[language] || (event.description as any)['en']
-      : event.description;
+    const description = getLocalizedText(event.description, language);
     const base = "https://calendar.google.com/calendar/render?action=TEMPLATE";
     return `${base}&text=${encodeURIComponent(event.title)}&dates=${start}/${end}&details=${encodeURIComponent(description)}&location=${encodeURIComponent(event.location)}&ctz=America/Toronto`;
   };
@@ -70,7 +68,7 @@ const Events: React.FC<EventsProps> = ({ events, user, onRsvp, onViewArchive, on
             {upcomingEvents.map(event => {
               const isGoing = user && event.attendees.includes(user.id);
               const isGuest = user?.role === 'guest';
-              const description = typeof event.description === 'object' ? (event.description as any)[language] || (event.description as any)['en'] : event.description;
+              const description = getLocalizedText(event.description, language);
               const eventTypeKey = `event_type_${event.type}`;
               const displayType = t(eventTypeKey as any) || event.type;
 

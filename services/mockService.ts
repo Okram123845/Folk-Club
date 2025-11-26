@@ -475,8 +475,20 @@ export const addResource = async (res: Omit<Resource, 'id' | 'dateAdded'>): Prom
     if (isFirebaseActive()) {
         await addDoc(collection(db!, "resources"), newRes);
     } else {
+        // DEMO MODE SAFEGUARD
         const list = await getResources();
-        localStorage.setItem('resources', JSON.stringify([...list, { ...newRes, id: String(Date.now()) }]));
+        const payload = JSON.stringify([...list, { ...newRes, id: String(Date.now()) }]);
+        
+        // Safety check for LocalStorage limit (approx 4.5MB safe limit)
+        if (payload.length > 4500000) { 
+            throw new Error("Demo Mode Limit: File too large. Connect Firebase or use URL.");
+        }
+        
+        try {
+            localStorage.setItem('resources', payload);
+        } catch (e) {
+            throw new Error("Local Storage Full. Clear data or connect Firebase.");
+        }
     }
 };
 

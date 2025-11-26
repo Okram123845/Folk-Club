@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Event } from '../types';
-import { useTranslation } from '../services/translations';
+import { useTranslation, getLocalizedText } from '../services/translations';
 
 interface ArchiveProps {
   events: Event[];
@@ -29,7 +29,7 @@ const Archive: React.FC<ArchiveProps> = ({ events, onBack, onViewDetails }) => {
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
           {pastEvents.map(event => {
-            const description = typeof event.description === 'object' ? (event.description as any)[language] || (event.description as any)['en'] : event.description;
+            const description = getLocalizedText(event.description, language);
             const eventTypeKey = `event_type_${event.type}`;
             const displayType = t(eventTypeKey as any) || event.type;
 
@@ -56,7 +56,7 @@ const Archive: React.FC<ArchiveProps> = ({ events, onBack, onViewDetails }) => {
           })}
         </div>
 
-        {pastEvents.length === 0 && <div className="text-center py-20 text-gray-400"><p className="text-xl">No archived events found.</p></div>}
+        {pastEvents.length === 0 && <div className="text-center py-20 text-gray-400"><p className="text-xl">{t('events_archive_empty')}</p></div>}
       </div>
     </section>
   );

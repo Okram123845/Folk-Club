@@ -1,8 +1,8 @@
 
 import React, { useState } from 'react';
 import { Event, GalleryItem, User } from '../types';
-import { useTranslation } from '../services/translations';
-import { addGalleryItem } from '../services/mockService';
+import { useTranslation, getLocalizedText } from '../services/translations';
+import { addGalleryItem, isFirebaseActive } from '../services/mockService';
 import Toast from './Toast';
 
 interface EventDetailsProps {
@@ -19,14 +19,16 @@ const EventDetails: React.FC<EventDetailsProps> = ({ event, galleryItems, user, 
   const [isUploading, setIsUploading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
+  // Safety check: ensure galleryItems is an array
+  const safeGalleryItems = Array.isArray(galleryItems) ? galleryItems : [];
+
   // Filter gallery items for this event AND ensure they are approved (or legacy undefined)
-  const eventMedia = galleryItems.filter(item => 
+  const eventMedia = safeGalleryItems.filter(item => 
     item.eventId === event.id && (item.approved === true || item.approved === undefined)
   );
 
-  const description = typeof event.description === 'object' 
-    ? (event.description as any)[language] || (event.description as any)['en']
-    : event.description;
+  // Robust description handling
+  const description = getLocalizedText(event.description, language);
 
   const eventTypeKey = `event_type_${event.type}`;
   const displayType = t(eventTypeKey as any) || event.type;
@@ -62,29 +64,37 @@ const EventDetails: React.FC<EventDetailsProps> = ({ event, galleryItems, user, 
       const file = e.target.files?.[0];
       if (!file || !user) return;
       
+      // CRITICAL: File size check to prevent crashes
+      const limit = isFirebaseActive() ? 50 * 1024 * 1024 : 2 * 1024 * 1024;
+      if (file.size > limit) {
+          setToast({ message: isFirebaseActive() ? "File too large (Max 50MB)" : "Demo Mode: Max 2MB", type: 'error' });
+          e.target.value = '';
+          return;
+      }
+      
       setIsUploading(true);
       try {
         const reader = new FileReader();
         reader.onloadend = async () => {
           const base64 = reader.result as string;
-          await addGalleryItem({
-            url: base64,
-            caption: `Shared by ${user.name}`,
-            source: 'upload',
-            type: 'image',
-            eventId: event.id,
-            approved: user.role === 'admin',
-            uploadedBy: user.id
-          });
-          setToast({ message: t('events_contrib_success'), type: 'success' });
+          if (base64) {
+             await addGalleryItem({
+                url: base64,
+                caption: `Shared by ${user.name}`,
+                source: 'upload',
+                type: 'image',
+                eventId: event.id,
+                approved: user.role === 'admin',
+                uploadedBy: user.id
+              });
+              setToast({ message: t('events_contrib_success'), type: 'success' });
+          }
+          setIsUploading(false);
         };
         reader.readAsDataURL(file);
       } catch (err) {
         setToast({ message: 'Upload failed', type: 'error' });
         setIsUploading(false);
-      } finally {
-        // We set uploading false in onloadend or manually if async logic was more complex
-        setTimeout(() => setIsUploading(false), 1000);
       }
   };
 
@@ -98,7 +108,7 @@ const EventDetails: React.FC<EventDetailsProps> = ({ event, galleryItems, user, 
           <span className="group-hover:-translate-x-1 transition-transform">←</span> {t('dash_back')}
         </button>
 
-        <div className="bg-white rounded-3xl shadow-xl overflow-hidden mb-12">
+        <div className="bg-white rounded-3xl shadow-xl overflow-hidden mb-12 animate-fade-in-up">
           <div className="relative h-64 md:h-96">
             <img 
               src={event.image || 'https://picsum.photos/1200/600'} 
@@ -138,10 +148,10 @@ const EventDetails: React.FC<EventDetailsProps> = ({ event, galleryItems, user, 
                    <div className="grid sm:grid-cols-2 gap-4 mb-8">
                      {eventMedia.map(item => (
                        <div key={item.id} className="rounded-xl overflow-hidden shadow-sm bg-gray-100 aspect-video relative group">
-                          {item.type === 'video' ? (
+                          {item.type === 'video' && item.url ? (
                             <iframe 
                               src={item.url.replace('watch?v=', 'embed/')} 
-                              title={item.caption} 
+                              title={item.caption || 'Video'} 
                               className="w-full h-full" 
                               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
                               allowFullScreen
@@ -182,15 +192,15 @@ const EventDetails: React.FC<EventDetailsProps> = ({ event, galleryItems, user, 
                             </div>
                             
                             {mediaType === 'image' ? (
-                                <label className="block w-full border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:bg-white transition-colors">
+                                <label className={`block w-full border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer transition-colors ${isUploading ? 'bg-gray-100' : 'hover:bg-white'}`}>
                                     <span className="text-roBlue font-bold">{isUploading ? t('auth_processing') : `📁 ${t('events_contrib_upload')}`}</span>
                                     <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={isUploading} />
                                 </label>
                             ) : (
                                 <div className="flex gap-2">
-                                    <input type="text" placeholder="YouTube URL" className="flex-1 p-2 border rounded-lg" value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} />
+                                    <input type="text" placeholder={t('dash_gal_video_url')} className="flex-1 p-2 border rounded-lg" value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} />
                                     <button onClick={handleMediaSubmit} disabled={isUploading || !videoUrl} className="bg-roBlue text-white px-4 rounded-lg font-bold hover:bg-blue-900 disabled:opacity-50">
-                                        {isUploading ? '...' : 'Add'}
+                                        {isUploading ? '...' : t('dash_add_event').split('/')[0].trim()}
                                     </button>
                                 </div>
                             )}
@@ -206,26 +216,26 @@ const EventDetails: React.FC<EventDetailsProps> = ({ event, galleryItems, user, 
 
             <div className="md:col-span-1">
                <div className="bg-slate-50 p-6 rounded-2xl border border-gray-100 sticky top-24">
-                  <h3 className="font-bold text-lg mb-4 text-slate-800 border-b pb-2">Event Info</h3>
+                  <h3 className="font-bold text-lg mb-4 text-slate-800 border-b pb-2">{t('events_info_box_title')}</h3>
                   <div className="space-y-4">
                     <div className="flex items-start gap-3">
                        <div className="w-8 h-8 rounded-full bg-roBlue/10 flex items-center justify-center text-roBlue">📅</div>
                        <div>
-                          <p className="text-xs text-gray-500 uppercase font-bold">Date</p>
+                          <p className="text-xs text-gray-500 uppercase font-bold">{t('events_label_date')}</p>
                           <p className="font-medium">{new Date(event.date).toLocaleDateString()}</p>
                        </div>
                     </div>
                     <div className="flex items-start gap-3">
                        <div className="w-8 h-8 rounded-full bg-roBlue/10 flex items-center justify-center text-roBlue">⏰</div>
                        <div>
-                          <p className="text-xs text-gray-500 uppercase font-bold">Time</p>
+                          <p className="text-xs text-gray-500 uppercase font-bold">{t('events_label_time')}</p>
                           <p className="font-medium">{event.time} {event.endTime ? `- ${event.endTime}` : ''} EST</p>
                        </div>
                     </div>
                     <div className="flex items-start gap-3">
                        <div className="w-8 h-8 rounded-full bg-roBlue/10 flex items-center justify-center text-roBlue">📍</div>
                        <div>
-                          <p className="text-xs text-gray-500 uppercase font-bold">Location</p>
+                          <p className="text-xs text-gray-500 uppercase font-bold">{t('events_label_location')}</p>
                           <p className="font-medium">{event.location}</p>
                        </div>
                     </div>

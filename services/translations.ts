@@ -57,6 +57,14 @@ export const dictionary: Translations = {
   events_contrib_upload: { en: 'Upload Media', ro: 'Încarcă Media', fr: 'Télécharger Média' },
   events_contrib_success: { en: 'Media submitted for review!', ro: 'Media trimisă spre aprobare!', fr: 'Média soumis pour examen !' },
   events_contrib_login: { en: 'Login as Member to contribute photos/videos', ro: 'Loghează-te ca Membru pentru a adăuga poze', fr: 'Connectez-vous pour contribuer' },
+  events_info_box_title: { en: 'Event Info', ro: 'Info Eveniment', fr: 'Info Événement' },
+  events_label_date: { en: 'Date', ro: 'Dată', fr: 'Date' },
+  events_label_time: { en: 'Time', ro: 'Oră', fr: 'Heure' },
+  events_label_location: { en: 'Location', ro: 'Locație', fr: 'Lieu' },
+  events_archive_empty: { en: 'No archived events found.', ro: 'Nu au fost găsite evenimente arhivate.', fr: 'Aucun événement archivé trouvé.' },
+  
+  // Navigation
+  nav_back_home: { en: 'Back to Home', ro: 'Înapoi la Acasă', fr: 'Retour à l\'Accueil' },
 
   // Event Types
   event_type_performance: { en: 'Performance', ro: 'Spectacol', fr: 'Spectacle' },
@@ -91,6 +99,8 @@ export const dictionary: Translations = {
   auth_switch_login: { en: 'Already a member?', ro: 'Ești deja membru?', fr: 'Déjà membre ?' },
   auth_demo: { en: 'Demo Credentials', ro: 'Conturi Demo', fr: 'Identifiants Démo' },
   auth_processing: { en: 'Processing...', ro: 'Se procesează...', fr: 'Traitement...' },
+  auth_password: { en: 'Password', ro: 'Parolă', fr: 'Mot de passe' },
+  auth_error_generic: { en: 'Authentication failed', ro: 'Autentificare eșuată', fr: 'Échec de l\'authentification' },
 
   // Dashboard - General
   dash_tab_events: { en: 'Manage Events', ro: 'Gest. Evenimente', fr: 'Gérer Événements' },
@@ -100,17 +110,24 @@ export const dictionary: Translations = {
   dash_tab_schedule: { en: 'My Schedule', ro: 'Programul Meu', fr: 'Mon Planning' },
   dash_tab_resources: { en: 'Member Resources', ro: 'Resurse Membri', fr: 'Ressources Membres' },
   dash_tab_community: { en: 'My Stories', ro: 'Poveștile Mele', fr: 'Mes Histoires' },
+  dash_tab_content: { en: 'Page Content', ro: 'Conținut Pagină', fr: 'Contenu Page' },
   dash_back: { en: 'Back to Website', ro: 'Înapoi la Site', fr: 'Retour au Site' },
+  dash_exit: { en: 'Exit', ro: 'Ieșire', fr: 'Sortie' },
   dash_logged_in: { en: 'Logged in as', ro: 'Conectat ca', fr: 'Connecté en tant que' },
   
   // Dashboard - Events
   dash_add_event: { en: 'Add / Edit Event', ro: 'Adaugă / Edit. Eveniment', fr: 'Ajouter / Modifier' },
   dash_save: { en: 'Save', ro: 'Salvează', fr: 'Enregistrer' },
+  dash_cancel: { en: 'Cancel', ro: 'Anulează', fr: 'Annuler' },
+  dash_update: { en: 'Update', ro: 'Actualizează', fr: 'Mettre à jour' },
   dash_delete: { en: 'Delete', ro: 'Șterge', fr: 'Supprimer' },
   dash_delete_confirm: { en: 'Are you sure you want to delete this item?', ro: 'Sigur doriți să ștergeți acest element?', fr: 'Êtes-vous sûr de vouloir supprimer cet élément ?' },
   dash_event_title: { en: 'Event Title', ro: 'Titlu Eveniment', fr: 'Titre de l\'événement' },
   dash_event_image: { en: 'Event Image', ro: 'Imagine Eveniment', fr: 'Image de l\'événement' },
   dash_event_desc: { en: 'Description', ro: 'Descriere', fr: 'Description' },
+  dash_event_title_ph: { en: 'e.g. Spring Festival', ro: 'ex. Festivalul de Primăvară', fr: 'ex. Festival de Printemps' },
+  dash_event_loc_ph: { en: 'e.g. Main Hall', ro: 'ex. Sala Principală', fr: 'ex. Salle Principale' },
+  dash_event_desc_ph: { en: 'Event details in', ro: 'Detalii eveniment în', fr: 'Détails de l\'événement en' },
   dash_table_event: { en: 'Event', ro: 'Eveniment', fr: 'Événement' },
   dash_table_date: { en: 'Date', ro: 'Dată', fr: 'Date' },
   dash_table_attendees: { en: 'Attendees', ro: 'Participanți', fr: 'Participants' },
@@ -119,12 +136,12 @@ export const dictionary: Translations = {
   // Dashboard - Gallery
   dash_upload_title: { en: 'Add Media', ro: 'Adaugă Media', fr: 'Ajouter Média' },
   dash_upload_text: { en: 'Click to upload image', ro: 'Click pentru a încărca', fr: 'Cliquez pour télécharger' },
-  dash_upload_hint: { en: 'JPG, PNG supported', ro: 'Suportă JPG, PNG', fr: 'JPG, PNG supportés' },
   dash_gal_type: { en: 'Media Type', ro: 'Tip Media', fr: 'Type de Média' },
   dash_gal_video_url: { en: 'Video URL', ro: 'URL Video', fr: 'URL Vidéo' },
+  dash_gal_video_hint: { en: 'Supports YouTube, Vimeo links.', ro: 'Suportă link-uri YouTube, Vimeo.', fr: 'Supporte les liens YouTube, Vimeo.' },
   dash_gal_event_link: { en: 'Link to Event (Optional)', ro: 'Link la Eveniment (Opțional)', fr: 'Lier à l\'événement (Optionnel)' },
   dash_gal_pending: { en: 'Pending Media Reviews', ro: 'Media în Așteptare', fr: 'Média en Attente' },
-  dash_gal_no_pending: { en: 'No media pending approval.', ro: 'Nu există media în așteptare.', fr: 'Aucun média en attente.' },
+  dash_gal_approved: { en: 'Approved Media', ro: 'Media Aprobată', fr: 'Médias Approuvés' },
   dash_ig_title: { en: 'Instagram Integration', ro: 'Integrare Instagram', fr: 'Intégration Instagram' },
   dash_ig_text: { en: 'Automatically pull latest photos', ro: 'Trage automat ultimele poze', fr: 'Récupérer auto les photos' },
   dash_ig_btn: { en: 'Sync Now', ro: 'Sincronizează', fr: 'Synchroniser' },
@@ -156,6 +173,14 @@ export const dictionary: Translations = {
   dash_content_saved: { en: 'Content updated successfully!', ro: 'Conținut actualizat cu succes!', fr: 'Contenu mis à jour avec succès !' },
   dash_test_submitted: { en: 'Story submitted for review!', ro: 'Poveste trimisă pentru revizuire!', fr: 'Histoire soumise pour examen !' },
   
+  // Dashboard - Content
+  dash_content_title: { en: 'Manage Page Content', ro: 'Gestionează Conținutul Paginii', fr: 'Gérer le Contenu de la Page' },
+  dash_content_select: { en: 'Select Section to Edit', ro: 'Selectează Secțiunea de Editat', fr: 'Sélectionner la Section à Modifier' },
+  dash_content_en: { en: 'English Text', ro: 'Text în Engleză', fr: 'Texte en Anglais' },
+  dash_content_ro: { en: 'Romanian Text', ro: 'Text în Română', fr: 'Texte en Roumain' },
+  dash_content_fr: { en: 'French Text', ro: 'Text în Franceză', fr: 'Texte en Français' },
+  dash_content_save: { en: 'Save Changes', ro: 'Salvează Modificările', fr: 'Enregistrer les Modifications' },
+
   // Dashboard - Resources
   dash_res_add: { en: 'Add Resource', ro: 'Adaugă Resursă', fr: 'Ajouter Ressource' },
   dash_res_title_label: { en: 'Resource Title', ro: 'Titlu Resursă', fr: 'Titre Ressource' },
@@ -171,6 +196,7 @@ export const dictionary: Translations = {
   dash_res_cat_costume: { en: 'Costume Guide', ro: 'Ghid Costume', fr: 'Guide Costumes' },
   dash_res_cat_doc: { en: 'Documents', ro: 'Documente', fr: 'Documents' },
   dash_res_list_title: { en: 'Available Resources', ro: 'Resurse Disponibile', fr: 'Ressources Disponibles' },
+  dash_res_empty: { en: 'No resources available.', ro: 'Nu există resurse disponibile.', fr: 'Aucune ressource disponible.' },
 
   // Dashboard - Member
   dash_no_rsvp: { en: "You haven't RSVP'd to any events yet.", ro: "Nu ai confirmat la niciun eveniment.", fr: "Vous n'avez pas encore répondu aux événements." },
@@ -231,4 +257,17 @@ export const useTranslation = () => {
     throw new Error('useTranslation must be used within a LanguageProvider');
   }
   return context;
+};
+
+// Helper for Robust Localized Text
+export const getLocalizedText = (
+  content: string | { en: string; ro: string; fr: string } | undefined, 
+  lang: string
+): string => {
+  if (!content) return '';
+  if (typeof content === 'string') return content;
+  
+  const c = content as { en: string; ro: string; fr: string };
+  // Try chosen language -> English -> First Available -> Empty
+  return c[lang as 'en'|'ro'|'fr'] || c['en'] || c['ro'] || c['fr'] || '';
 };

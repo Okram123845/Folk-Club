@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { User, Event, GalleryItem, Testimonial, PageContent, Resource } from '../types';
+import { User, Event, GalleryItem, Testimonial, PageContent, Resource, Language } from '../types';
 import { 
   saveEvent, 
   deleteEvent, 
@@ -22,9 +22,11 @@ import {
   toggleGalleryApproval,
   getResources,
   addResource,
-  deleteResource
+  deleteResource,
+  migrateLegacyEvents
 } from '../services/mockService';
 import { useTranslation } from '../services/translations';
+import { translateText } from '../services/integrations';
 import LanguageSwitcher from './LanguageSwitcher';
 import ConfirmModal from './ConfirmModal';
 import Toast from './Toast';
@@ -68,6 +70,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   const [memberStory, setMemberStory] = useState('');
 
   const [newEvent, setNewEvent] = useState<Partial<Event>>({ type: 'performance' });
+  const [descriptionLang, setDescriptionLang] = useState<Language>('en'); // Independent language toggle
+  const [isTranslating, setIsTranslating] = useState(false);
   
   // Resource Management State
   const [newResource, setNewResource] = useState<Partial<Resource>>({ category: 'document' });
@@ -96,6 +100,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
     }
   }, [user.role, activeTab]);
 
+  // Sync description editor language with app language initially
+  useEffect(() => {
+    setDescriptionLang(language);
+  }, []);
+
   const loadCommonData = async () => {
      try {
          const tData = await getTestimonials();
@@ -118,6 +127,61 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
       }
     } catch (e) {
       console.error("Failed to load dashboard data", e);
+    }
+  };
+
+  const handleFixLegacyEvents = async () => {
+    const confirmFix = window.confirm("This will scan all events and automatically translate descriptions that are missing for other languages. Continue?");
+    if (!confirmFix) return;
+
+    setModalLoading(true);
+    try {
+      const count = await migrateLegacyEvents();
+      if (count > 0) {
+        showToast(`Updated ${count} legacy events with translations!`, 'success');
+        onUpdateData(); // Refresh app data
+      } else {
+        showToast('All events are already up to date.', 'success');
+      }
+    } catch (e) {
+      showToast('Failed to fix legacy events', 'error');
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
+  const handleAutoTranslate = async () => {
+    if (!newEvent.description) return;
+    
+    setIsTranslating(true);
+    try {
+      let currentDesc = { en: '', ro: '', fr: '' };
+      if (typeof newEvent.description === 'string') {
+        currentDesc = { en: newEvent.description, ro: '', fr: '' };
+      } else {
+        currentDesc = { ...(newEvent.description as any) };
+      }
+
+      const sourceText = currentDesc[descriptionLang];
+      if (!sourceText) {
+        showToast("Please enter text in the current language first.", "error");
+        setIsTranslating(false);
+        return;
+      }
+
+      const targets: Language[] = ['en', 'ro', 'fr'];
+      for (const target of targets) {
+        if (target !== descriptionLang && !currentDesc[target]) {
+           currentDesc[target] = await translateText(sourceText, target);
+        }
+      }
+      
+      setNewEvent({ ...newEvent, description: currentDesc });
+      showToast("Translations generated!", "success");
+    } catch (e) {
+      showToast("Translation failed.", "error");
+    } finally {
+      setIsTranslating(false);
     }
   };
 
@@ -144,7 +208,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   const handleEditEvent = (ev: Event) => {
     let description = ev.description;
     
-    // Normalize string description to multi-language object
+    // Normalize string description to multi-language object for editing
     if (typeof description === 'string') {
         description = { en: description, ro: description, fr: description };
     } else if (!description) {
@@ -530,15 +594,25 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   const getEventDescription = () => {
     if (!newEvent.description) return '';
     if (typeof newEvent.description === 'string') return newEvent.description;
-    return (newEvent.description as any)[language] || '';
+    return (newEvent.description as any)[descriptionLang] || '';
   };
 
   const renderAdminEvents = () => (
     <div className="space-y-8 animate-fade-in-up pb-10" ref={eventFormTopRef}>
       <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
-        <h3 className="text-xl font-bold mb-6 text-slate-800 border-b pb-2 flex items-center gap-2">
-          <span>{newEvent.id ? '✏️' : '✨'}</span> {t('dash_add_event')}
-        </h3>
+        <div className="flex justify-between items-center mb-6 border-b pb-2">
+            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <span>{newEvent.id ? '✏️' : '✨'}</span> {t('dash_add_event')}
+            </h3>
+            <button 
+                onClick={handleFixLegacyEvents}
+                className="text-xs bg-orange-50 text-orange-600 px-3 py-1.5 rounded border border-orange-200 hover:bg-orange-100 transition-colors flex items-center gap-1"
+                title="Automatically fix descriptions that are missing translations"
+            >
+                🔧 Fix Legacy Events
+            </button>
+        </div>
+        
         <form onSubmit={handleAddEvent} className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-1">
             <label htmlFor="event-title" className="block text-sm font-bold text-gray-700">{t('dash_event_title')}</label>
@@ -612,11 +686,27 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
           
           <div className="md:col-span-2 space-y-3">
             <div className="flex items-center justify-between">
-               <label htmlFor="event-description" className="block text-sm font-bold text-gray-700">{t('dash_event_desc')} ({language.toUpperCase()})</label>
+               <label htmlFor="event-description" className="block text-sm font-bold text-gray-700">{t('dash_event_desc')}</label>
+               <div className="flex gap-2 items-center">
+                 <button 
+                    type="button"
+                    onClick={handleAutoTranslate}
+                    disabled={isTranslating}
+                    className="text-xs bg-purple-100 text-purple-700 px-3 py-1.5 rounded-md font-bold hover:bg-purple-200 transition-colors flex items-center gap-1 mr-2"
+                    title="Automatically fill empty language fields based on current text"
+                 >
+                    {isTranslating ? '...' : '✨ Auto-Translate'}
+                 </button>
+                 <div className="flex gap-1">
+                    <button type="button" onClick={() => setDescriptionLang('en')} className={`text-xs px-3 py-1.5 rounded-md font-bold transition-colors border ${descriptionLang === 'en' ? 'bg-roBlue text-white border-roBlue' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-200'}`}>EN</button>
+                    <button type="button" onClick={() => setDescriptionLang('ro')} className={`text-xs px-3 py-1.5 rounded-md font-bold transition-colors border ${descriptionLang === 'ro' ? 'bg-roBlue text-white border-roBlue' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-200'}`}>RO</button>
+                    <button type="button" onClick={() => setDescriptionLang('fr')} className={`text-xs px-3 py-1.5 rounded-md font-bold transition-colors border ${descriptionLang === 'fr' ? 'bg-roBlue text-white border-roBlue' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-200'}`}>FR</button>
+                 </div>
+               </div>
             </div>
             <textarea 
-              id="event-description" placeholder={t('dash_event_desc_ph')}
-              className="p-3 border border-gray-300 rounded-lg w-full min-h-[100px] focus:ring-2 focus:ring-roBlue outline-none transition-all" 
+              id="event-description" placeholder={`${t('dash_event_desc_ph')} ${descriptionLang === 'ro' ? 'Română' : descriptionLang === 'fr' ? 'Français' : 'English'}`}
+              className="p-3 border border-gray-300 rounded-lg w-full min-h-[120px] focus:ring-2 focus:ring-roBlue outline-none transition-all" 
               value={getEventDescription()}
               onChange={e => {
                   let currentDescObj = newEvent.description;
@@ -626,12 +716,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
                   }
                   setNewEvent({
                       ...newEvent, 
-                      description: { ...(currentDescObj as any), [language]: e.target.value }
+                      description: { ...(currentDescObj as any), [descriptionLang]: e.target.value }
                   });
               }}
             />
-            <p className="text-xs text-gray-500 italic">
-               * Editing for <strong>{language === 'ro' ? 'Romanian' : language === 'fr' ? 'French' : 'English'}</strong>. Switch dashboard language to edit other versions.
+            <p className="text-xs text-gray-500 italic flex items-center gap-1">
+               <span className="text-roBlue">ℹ</span> Editing <strong>{descriptionLang.toUpperCase()}</strong> version. Use the buttons above to translate for other languages.
             </p>
           </div>
 

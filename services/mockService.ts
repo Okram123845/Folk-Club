@@ -19,7 +19,7 @@ import {
   arrayRemove
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { sendRealEmail, fetchRealInstagramPosts, sendRSVPConfirmation } from './integrations';
+import { sendRealEmail, fetchRealInstagramPosts, sendRSVPConfirmation, translateText } from './integrations';
 import { dictionary } from './translations';
 
 // --- MOCK DATA (Fallback for Demo Mode) ---
@@ -206,22 +206,52 @@ export const getEvents = async (): Promise<Event[]> => {
   }
 };
 
+// HELPER: Auto-translate description logic
+const processEventDescription = async (description: string | { en: string; ro: string; fr: string }): Promise<{ en: string; ro: string; fr: string }> => {
+  let descObj = { en: '', ro: '', fr: '' };
+
+  // 1. Normalize input
+  if (typeof description === 'string') {
+    descObj.en = description;
+  } else if (description && typeof description === 'object') {
+    descObj = { ...description };
+  }
+
+  // 2. Identify Source Text (prefer English, then Romanian, then French)
+  const sourceText = descObj.en || descObj.ro || descObj.fr || '';
+
+  if (!sourceText) return descObj;
+
+  // 3. Fill missing translations
+  if (!descObj.en) descObj.en = await translateText(sourceText, 'en');
+  if (!descObj.ro) descObj.ro = await translateText(sourceText, 'ro');
+  if (!descObj.fr) descObj.fr = await translateText(sourceText, 'fr');
+
+  return descObj;
+};
+
 export const saveEvent = async (event: Event): Promise<Event> => {
+  // --- AUTO TRANSLATION ENFORCEMENT ---
+  // Ensure description is a multi-language object with all fields filled
+  const translatedDescription = await processEventDescription(event.description);
+  const eventToSave = { ...event, description: translatedDescription };
+  // ------------------------------------
+
   if (isFirebaseActive()) {
-    let imageUrl = event.image;
+    let imageUrl = eventToSave.image;
     
     // If image is base64 (from upload), upload to Firebase Storage
-    if (event.image?.startsWith('data:')) {
+    if (eventToSave.image?.startsWith('data:')) {
        const storageRef = ref(storage!, `events/${Date.now()}_img`);
-       const response = await fetch(event.image);
+       const response = await fetch(eventToSave.image);
        const blob = await response.blob();
        await uploadBytes(storageRef, blob);
        imageUrl = await getDownloadURL(storageRef);
     }
 
-    const eventData = { ...event, image: imageUrl || '' };
-    if (event.id) {
-        await setDoc(doc(db!, "events", event.id), eventData);
+    const eventData = { ...eventToSave, image: imageUrl || '' };
+    if (eventData.id) {
+        await setDoc(doc(db!, "events", eventData.id), eventData);
     } else {
         const docRef = await addDoc(collection(db!, "events"), eventData);
         eventData.id = docRef.id;
@@ -232,10 +262,38 @@ export const saveEvent = async (event: Event): Promise<Event> => {
   } else {
     // Local Fallback
     const events = await getEvents();
-    const newEvents = event.id ? events.map(e => e.id === event.id ? event : e) : [...events, { ...event, id: String(Date.now()) }];
+    const newEvents = eventToSave.id ? events.map(e => e.id === eventToSave.id ? eventToSave : e) : [...events, { ...eventToSave, id: String(Date.now()) }];
     localStorage.setItem('events', JSON.stringify(newEvents));
-    return event;
+    return eventToSave;
   }
+};
+
+// MIGRATION TOOL
+export const migrateLegacyEvents = async (): Promise<number> => {
+  const events = await getEvents();
+  let count = 0;
+  
+  for (const ev of events) {
+    let needsUpdate = false;
+    
+    // Check if string
+    if (typeof ev.description === 'string') {
+      needsUpdate = true;
+    } 
+    // Check if object but missing keys
+    else if (ev.description && typeof ev.description === 'object') {
+      const d = ev.description as any;
+      if (!d.en || !d.ro || !d.fr) {
+        needsUpdate = true;
+      }
+    }
+
+    if (needsUpdate) {
+      await saveEvent(ev); // saveEvent handles the translation logic
+      count++;
+    }
+  }
+  return count;
 };
 
 export const deleteEvent = async (id: string): Promise<void> => {

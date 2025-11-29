@@ -1,7 +1,8 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
+
+import { initializeApp, FirebaseApp } from 'firebase/app';
+import { getAuth, Auth } from 'firebase/auth';
+import { initializeFirestore, Firestore } from 'firebase/firestore';
+import { getStorage, FirebaseStorage } from 'firebase/storage';
 
 // --------------------------------------------------------
 // PASTE YOUR FIREBASE KEYS HERE FROM STEP 1
@@ -16,14 +17,22 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-// We wrap this in a try-catch so the app doesn't crash if keys aren't set yet
-let app, auth, db, storage;
+let app: FirebaseApp | undefined;
+let auth: Auth | undefined;
+let db: Firestore | undefined;
+let storage: FirebaseStorage | undefined;
 
 try {
-  if (firebaseConfig.apiKey !== "AIzaSyC7QjJKCKmDSobxToDvzU7EAF2PY-thrpc") {
+  // Check if apiKey is present and not a generic placeholder
+  if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY") {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
-    db = getFirestore(app);
+    
+    // Initialize Firestore with settings to improve connection stability
+    db = initializeFirestore(app, {
+      experimentalForceLongPolling: true, // Helps bypass firewall/network restrictions
+    });
+    
     storage = getStorage(app);
     console.log("🔥 Firebase Connected Successfully");
   } else {

@@ -70,7 +70,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   const [memberStory, setMemberStory] = useState('');
 
   const [newEvent, setNewEvent] = useState<Partial<Event>>({ type: 'performance' });
-  const [descriptionLang, setDescriptionLang] = useState<Language>('en'); // Independent language toggle
+  const [eventInputType, setEventInputType] = useState<'url' | 'file'>('url'); // New state for Image Input toggle
+  const [descriptionLang, setDescriptionLang] = useState<Language>('en'); 
   const [isTranslating, setIsTranslating] = useState(false);
   
   // Resource Management State
@@ -214,7 +215,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
     } else if (!description) {
         description = { en: '', ro: '', fr: '' };
     } else {
-        // Ensure all keys exist
         description = {
             en: (description as any).en || '',
             ro: (description as any).ro || '',
@@ -226,6 +226,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
       ...ev,
       description: description
     });
+    
+    // Check if current image is a data URL (file) or http URL
+    if (ev.image && !ev.image.startsWith('data:') && !ev.image.includes('firebase')) {
+        setEventInputType('url');
+    }
     
     if (eventFormTopRef.current) {
       eventFormTopRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -307,7 +312,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   const handleEventImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Limit file size (2MB for demo, 10MB for live)
       const limit = isLive ? 10 * 1024 * 1024 : 2 * 1024 * 1024;
       if (file.size > limit) {
         showToast(isLive ? "File too large (Max 10MB)" : "Demo Mode: Max 2MB allowed", 'error');
@@ -340,7 +344,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
               });
               setVideoUrl('');
           } else {
-             // Image upload logic
+             // Image upload logic handled in file input
           }
           onUpdateData();
           showToast('Media added successfully', 'success');
@@ -353,7 +357,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Limit file size (2MB for demo, 10MB for live)
     const limit = isLive ? 10 * 1024 * 1024 : 2 * 1024 * 1024;
     if (file.size > limit) {
       showToast(isLive ? "File too large (Max 10MB)" : "Demo Mode: Max 2MB allowed", 'error');
@@ -500,15 +503,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   const handleResourceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Limit file size to prevent crash
       const limit = isLive ? 50 * 1024 * 1024 : 2 * 1024 * 1024;
-      
       if (file.size > limit) {
           showToast(isLive ? "File too large (Max 50MB)" : "Demo Mode: Max 2MB. Connect Firebase for larger files.", 'error');
-          e.target.value = ''; // Clear input
+          e.target.value = '';
           return;
       }
-
       const reader = new FileReader();
       reader.onloadend = () => {
          setNewResource({...newResource, url: reader.result as string});
@@ -668,20 +668,52 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
               value={newEvent.location || ''} onChange={e => setNewEvent({...newEvent, location: e.target.value})} required 
             />
           </div>
+          
+          {/* IMAGE INPUT TOGGLE */}
           <div className="md:col-span-2 space-y-1">
-             <label htmlFor="event-image" className="block text-sm font-bold text-gray-700">{t('dash_event_image')}</label>
-             <div className="space-y-2 border-2 border-dashed border-gray-300 rounded-lg p-4 hover:bg-gray-50 transition-colors">
-                <input 
-                  id="event-image" type="file" ref={eventImageRef} accept="image/*" onChange={handleEventImageUpload}
-                  className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-roBlue file:text-white hover:file:bg-blue-700 cursor-pointer"
-                />
-                {newEvent.image && (
-                  <div className="relative h-48 w-full rounded-lg overflow-hidden border border-gray-200 group mt-4">
-                    <img src={newEvent.image} alt="Event Preview" className="w-full h-full object-cover" />
-                    <button type="button" onClick={() => { setNewEvent({ ...newEvent, image: undefined }); if (eventImageRef.current) eventImageRef.current.value = ''; }} className="absolute top-2 right-2 bg-red-600 text-white p-2 rounded-full shadow-lg hover:bg-red-700" title="Remove Image">✕</button>
-                  </div>
-                )}
+             <div className="flex justify-between items-center mb-1">
+                <label htmlFor="event-image" className="block text-sm font-bold text-gray-700">{t('dash_event_image')}</label>
+                <div className="flex text-xs border border-gray-300 rounded-lg overflow-hidden">
+                    <button 
+                        type="button" 
+                        onClick={() => setEventInputType('url')} 
+                        className={`px-3 py-1 font-bold ${eventInputType === 'url' ? 'bg-roBlue text-white' : 'bg-gray-50 text-gray-600'}`}
+                    >
+                        URL
+                    </button>
+                    <button 
+                        type="button" 
+                        onClick={() => setEventInputType('file')} 
+                        className={`px-3 py-1 font-bold ${eventInputType === 'file' ? 'bg-roBlue text-white' : 'bg-gray-50 text-gray-600'}`}
+                    >
+                        Upload
+                    </button>
+                </div>
              </div>
+             
+             {eventInputType === 'file' ? (
+                 <div className="space-y-2 border-2 border-dashed border-gray-300 rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                    <input 
+                      id="event-image" type="file" ref={eventImageRef} accept="image/*" onChange={handleEventImageUpload}
+                      className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-roBlue file:text-white hover:file:bg-blue-700 cursor-pointer"
+                    />
+                 </div>
+             ) : (
+                 <input 
+                    type="text" 
+                    placeholder="https://example.com/image.jpg"
+                    className="p-3 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-roBlue outline-none"
+                    value={newEvent.image && !newEvent.image.startsWith('data:') ? newEvent.image : ''}
+                    onChange={e => setNewEvent({...newEvent, image: e.target.value})}
+                 />
+             )}
+             
+             {newEvent.image && (
+                <div className="relative h-48 w-full rounded-lg overflow-hidden border border-gray-200 group mt-4">
+                  <img src={newEvent.image} alt="Event Preview" className="w-full h-full object-cover" />
+                  <button type="button" onClick={() => { setNewEvent({ ...newEvent, image: undefined }); if (eventImageRef.current) eventImageRef.current.value = ''; }} className="absolute top-2 right-2 bg-red-600 text-white p-2 rounded-full shadow-lg hover:bg-red-700" title="Remove Image">✕</button>
+                </div>
+             )}
           </div>
           
           <div className="md:col-span-2 space-y-3">

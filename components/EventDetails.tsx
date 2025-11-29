@@ -15,7 +15,8 @@ interface EventDetailsProps {
 const EventDetails: React.FC<EventDetailsProps> = ({ event, galleryItems, user, onBack }) => {
   const { t, language } = useTranslation();
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
-  const [videoUrl, setVideoUrl] = useState('');
+  const [inputType, setInputType] = useState<'url' | 'file'>('url'); // Toggle for member upload
+  const [mediaUrl, setMediaUrl] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -35,24 +36,21 @@ const EventDetails: React.FC<EventDetailsProps> = ({ event, galleryItems, user, 
 
   const handleMediaSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user || !mediaUrl) return;
     
     setIsUploading(true);
     try {
-        if (mediaType === 'video') {
-             if (!videoUrl) return;
-             await addGalleryItem({
-                 url: videoUrl,
-                 caption: `Shared by ${user.name}`,
-                 source: 'upload',
-                 type: 'video',
-                 eventId: event.id,
-                 approved: user.role === 'admin',
-                 uploadedBy: user.id
-             });
-             setVideoUrl('');
-        }
-        setToast({ message: t('events_contrib_success'), type: 'success' });
+         await addGalleryItem({
+             url: mediaUrl,
+             caption: `Shared by ${user.name}`,
+             source: 'upload',
+             type: mediaType,
+             eventId: event.id,
+             approved: user.role === 'admin',
+             uploadedBy: user.id
+         });
+         setMediaUrl('');
+         setToast({ message: t('events_contrib_success'), type: 'success' });
     } catch (err) {
         setToast({ message: 'Upload failed', type: 'error' });
     } finally {
@@ -180,27 +178,52 @@ const EventDetails: React.FC<EventDetailsProps> = ({ event, galleryItems, user, 
                     
                     {user ? (
                         <div className="space-y-4">
-                            <div className="flex gap-4 mb-2">
+                            <div className="flex flex-wrap gap-4 mb-2">
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input type="radio" checked={mediaType === 'image'} onChange={() => setMediaType('image')} className="text-roBlue" />
                                     <span className="text-sm font-bold">Image</span>
                                 </label>
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input type="radio" checked={mediaType === 'video'} onChange={() => setMediaType('video')} className="text-roBlue" />
-                                    <span className="text-sm font-bold">Video URL</span>
+                                    <span className="text-sm font-bold">Video</span>
                                 </label>
                             </div>
                             
-                            {mediaType === 'image' ? (
+                            {mediaType === 'image' && (
+                                <div className="flex gap-2 mb-2 text-xs">
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setInputType('url')} 
+                                        className={`px-3 py-1 rounded font-bold ${inputType === 'url' ? 'bg-roBlue text-white' : 'bg-gray-200'}`}
+                                    >
+                                        Image URL
+                                    </button>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setInputType('file')} 
+                                        className={`px-3 py-1 rounded font-bold ${inputType === 'file' ? 'bg-roBlue text-white' : 'bg-gray-200'}`}
+                                    >
+                                        Upload File
+                                    </button>
+                                </div>
+                            )}
+                            
+                            {mediaType === 'image' && inputType === 'file' ? (
                                 <label className={`block w-full border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer transition-colors ${isUploading ? 'bg-gray-100' : 'hover:bg-white'}`}>
                                     <span className="text-roBlue font-bold">{isUploading ? t('auth_processing') : `📁 ${t('events_contrib_upload')}`}</span>
                                     <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={isUploading} />
                                 </label>
                             ) : (
                                 <div className="flex gap-2">
-                                    <input type="text" placeholder={t('dash_gal_video_url')} className="flex-1 p-2 border rounded-lg" value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} />
-                                    <button onClick={handleMediaSubmit} disabled={isUploading || !videoUrl} className="bg-roBlue text-white px-4 rounded-lg font-bold hover:bg-blue-900 disabled:opacity-50">
-                                        {isUploading ? '...' : t('dash_add_event').split('/')[0].trim()}
+                                    <input 
+                                        type="text" 
+                                        placeholder={mediaType === 'video' ? t('dash_gal_video_url') : "https://example.com/image.jpg"} 
+                                        className="flex-1 p-2 border rounded-lg" 
+                                        value={mediaUrl} 
+                                        onChange={(e) => setMediaUrl(e.target.value)} 
+                                    />
+                                    <button onClick={handleMediaSubmit} disabled={isUploading || !mediaUrl} className="bg-roBlue text-white px-4 rounded-lg font-bold hover:bg-blue-900 disabled:opacity-50">
+                                        {isUploading ? '...' : 'Add'}
                                     </button>
                                 </div>
                             )}

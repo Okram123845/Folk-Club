@@ -7,12 +7,12 @@ import { getStorage } from 'firebase/storage';
 // PASTE YOUR FIREBASE KEYS HERE FROM STEP 1
 // --------------------------------------------------------
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY_HERE",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyC7QjJKCKmDSobxToDvzU7EAF2PY-thrpc",
+  authDomain: "kw-romanian-folk-club.firebaseapp.com",
+  projectId: "kw-romanian-folk-club",
+  storageBucket: "kw-romanian-folk-club.firebasestorage.app",
+  messagingSenderId: "1006030603730",
+  appId: "1:1006030603730:web:deaed80503617901c4340b"
 };
 
 // Initialize Firebase
@@ -20,7 +20,7 @@ const firebaseConfig = {
 let app, auth, db, storage;
 
 try {
-  if (firebaseConfig.apiKey !== "YOUR_API_KEY_HERE") {
+  if (firebaseConfig.apiKey !== "AIzaSyC7QjJKCKmDSobxToDvzU7EAF2PY-thrpc") {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);

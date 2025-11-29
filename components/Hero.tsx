@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from '../services/translations';
 import { getPageContent } from '../services/mockService';
@@ -26,15 +27,17 @@ const Hero: React.FC = () => {
           alt="Romanian Folk Dance" 
           className="w-full h-full object-cover"
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-roBlue/90 via-roBlue/70 to-roRed/60 mix-blend-multiply"></div>
-        <div className="absolute inset-0 bg-black/30"></div>
+        {/* Romanian Flag Gradient: Blue -> Yellow -> Red */}
+        {/* Using mix-blend-hard-light makes the yellow much more vivid than multiply */}
+        <div className="absolute inset-0 bg-gradient-to-r from-roBlue/90 via-roYellow/85 to-roRed/90 mix-blend-hard-light"></div>
+        <div className="absolute inset-0 bg-black/10"></div>
       </div>
 
       <div className="container mx-auto px-4 sm:px-6 relative z-10 text-center text-white pt-20 pb-10">
         <h1 className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-serif font-bold mb-4 md:mb-6 drop-shadow-lg animate-fade-in-up leading-tight">
-          {t('hero_title_prefix')} <span className="text-roYellow block md:inline mt-1 md:mt-0">{t('hero_title_highlight')}</span>
+          {t('hero_title_prefix')} <span className="text-roYellow block md:inline mt-1 md:mt-0 drop-shadow-md text-shadow-black">{t('hero_title_highlight')}</span>
         </h1>
-        <p className="text-base sm:text-lg md:text-xl lg:text-2xl font-light mb-8 md:mb-12 max-w-3xl mx-auto drop-shadow-md opacity-90 px-2 leading-relaxed">
+        <p className="text-base sm:text-lg md:text-xl lg:text-2xl font-light mb-8 md:mb-12 max-w-3xl mx-auto drop-shadow-md opacity-90 px-4 py-2 leading-relaxed bg-black/50 rounded-2xl backdrop-blur-sm">
           {dynamicSubtitle || t('hero_subtitle')}
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center items-center w-full max-w-sm mx-auto sm:max-w-none">

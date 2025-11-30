@@ -137,23 +137,36 @@ export const loginUser = async (email: string, password: string): Promise<User> 
   }
 };
 
-export const registerUser = async (name: string, email: string): Promise<User> => {
+export const registerUser = async (name: string, email: string, password: string): Promise<User> => {
   if (isFirebaseActive()) {
-    const userCredential = await createUserWithEmailAndPassword(auth!, email, 'password123'); // Simple password for now, normally input
+    // 1. Check if ANY users exist. If 0, make this user an ADMIN.
+    let role: UserRole = 'member';
+    try {
+        const usersSnapshot = await getDocs(collection(db!, "users"));
+        if (usersSnapshot.empty) {
+            role = 'admin';
+            console.log("Creating first user as ADMIN");
+        }
+    } catch (e) {
+        console.warn("Could not check user count, defaulting to member", e);
+    }
+
+    // 2. Create Auth User
+    const userCredential = await createUserWithEmailAndPassword(auth!, email, password);
     await updateProfile(userCredential.user, { displayName: name });
     
     const newUser: User = {
       id: userCredential.user.uid,
       name,
       email,
-      role: 'member',
+      role: role,
       avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
       phoneNumber: ''
     };
 
-    // Save extended profile to Firestore
+    // 3. Save extended profile to Firestore
     await setDoc(doc(db!, "users", newUser.id), {
-      name, email, role: 'member', createdAt: new Date().toISOString(), phoneNumber: ''
+      name, email, role: role, createdAt: new Date().toISOString(), phoneNumber: ''
     });
 
     return newUser;

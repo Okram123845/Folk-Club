@@ -30,7 +30,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }
       if (isLogin) {
         user = await loginUser(email, password);
       } else {
-        user = await registerUser(name, email);
+        // Pass password correctly to registerUser
+        user = await registerUser(name, email, password);
       }
       onLoginSuccess(user);
       onClose();

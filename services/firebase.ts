@@ -1,7 +1,7 @@
 
 import { initializeApp, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
-import { initializeFirestore, Firestore } from 'firebase/firestore';
+import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 
 // --------------------------------------------------------
@@ -28,10 +28,8 @@ try {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     
-    // Initialize Firestore with settings to improve connection stability
-    db = initializeFirestore(app, {
-      experimentalForceLongPolling: true, // Helps bypass firewall/network restrictions
-    });
+    // Initialize Firestore using standard getFirestore for maximum speed (WebSockets)
+    db = getFirestore(app);
     
     storage = getStorage(app);
     console.log("🔥 Firebase Connected Successfully");

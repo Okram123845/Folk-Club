@@ -13,8 +13,8 @@ interface AuthModalProps {
 const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }) => {
   const { t } = useTranslation();
   const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('admin@folk.com');
-  const [password, setPassword] = useState('admin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -30,16 +30,29 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }
       if (isLogin) {
         user = await loginUser(email, password);
       } else {
-        // Pass password correctly to registerUser
         user = await registerUser(name, email, password);
       }
       onLoginSuccess(user);
       onClose();
     } catch (err: any) {
-      setError(err.message || t('auth_error_generic'));
+      console.error(err);
+      if (err.code === 'auth/invalid-credential') {
+        setError("Incorrect email or password.");
+      } else if (err.code === 'auth/email-already-in-use') {
+        setError("This email is already registered.");
+      } else {
+        setError(err.message || t('auth_error_generic'));
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleMode = () => {
+    setIsLogin(!isLogin);
+    setError('');
+    // Keep email if typed, but clear password
+    setPassword('');
   };
 
   return (
@@ -57,13 +70,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }
           {isLogin ? t('auth_welcome') : t('auth_join')}
         </h2>
 
-        {error && <div className="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm">{error}</div>}
-
-        <div className="bg-blue-50 p-4 rounded-lg mb-6 text-xs text-blue-800 hidden sm:block">
-          <p className="font-bold mb-1">{t('auth_demo')}:</p>
-          <p>Admin: admin@folk.com / admin</p>
-          <p>Member: member@folk.com / member</p>
-        </div>
+        {error && <div className="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm font-bold">{error}</div>}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isLogin && (
@@ -74,7 +81,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }
               <input
                 id="auth-name"
                 type="text"
-                placeholder={t('contact_form_name')}
+                placeholder="John Doe"
                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-roBlue outline-none"
                 value={name}
                 onChange={e => setName(e.target.value)}
@@ -89,7 +96,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }
             <input
               id="auth-email"
               type="email"
-              placeholder={t('contact_label_email')}
+              placeholder="name@example.com"
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-roBlue outline-none"
               value={email}
               onChange={e => setEmail(e.target.value)}
@@ -103,27 +110,32 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }
             <input
               id="auth-password"
               type="password"
-              placeholder={t('auth_password')}
+              placeholder="••••••••"
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-roBlue outline-none"
               value={password}
               onChange={e => setPassword(e.target.value)}
-              required={isLogin}
+              required
             />
           </div>
 
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-roBlue text-white py-3 rounded-lg font-bold hover:bg-blue-900 transition-colors disabled:opacity-70"
+            className="w-full bg-roBlue text-white py-3 rounded-lg font-bold hover:bg-blue-900 transition-colors disabled:opacity-70 flex justify-center"
           >
-            {loading ? t('auth_processing') : (isLogin ? t('auth_login_btn') : t('auth_signup_btn'))}
+            {loading ? (
+              <span className="flex items-center gap-2">
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                {t('auth_processing')}
+              </span>
+            ) : (isLogin ? t('auth_login_btn') : t('auth_signup_btn'))}
           </button>
         </form>
 
         <div className="mt-6 text-center text-sm text-gray-600">
           {isLogin ? t('auth_switch_signup') : t('auth_switch_login')}
           <button 
-            onClick={() => setIsLogin(!isLogin)}
+            onClick={toggleMode}
             className="text-roRed font-bold hover:underline ml-1"
           >
             {isLogin ? t('auth_signup_btn') : t('auth_login_btn')}

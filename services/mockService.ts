@@ -115,17 +115,37 @@ export const loginUser = async (email: string, password: string): Promise<User> 
     const userCredential = await signInWithEmailAndPassword(auth!, email, password);
     const firebaseUser = userCredential.user;
     
-    // Fetch custom user role from Firestore
-    const userDoc = await getDoc(doc(db!, "users", firebaseUser.uid));
-    const userData = userDoc.exists() ? userDoc.data() : {};
+    // Fetch custom user role from Firestore with a 2-second timeout
+    // If DB is slow, default to 'member' instantly so login doesn't hang
+    let role: UserRole = 'member';
+    let phoneNumber = '';
+    
+    try {
+        const docRef = doc(db!, "users", firebaseUser.uid);
+        
+        // Race: DB fetch vs 2-second timeout
+        const userDoc: any = await Promise.race([
+            getDoc(docRef),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
+        ]);
+
+        if (userDoc && userDoc.exists()) {
+            const data = userDoc.data();
+            role = data.role || 'member';
+            phoneNumber = data.phoneNumber || '';
+        }
+    } catch (e) {
+        console.warn("DB Fetch slow/failed, defaulting to Member role for speed.", e);
+        // We default to 'member' so they can at least log in.
+    }
 
     return {
       id: firebaseUser.uid,
       name: firebaseUser.displayName || email.split('@')[0],
       email: firebaseUser.email || '',
-      role: userData.role || 'member',
+      role: role,
       avatar: firebaseUser.photoURL || `https://ui-avatars.com/api/?name=${email}&background=random`,
-      phoneNumber: userData.phoneNumber || ''
+      phoneNumber: phoneNumber
     };
   } else {
     // Local Fallback
@@ -139,22 +159,14 @@ export const loginUser = async (email: string, password: string): Promise<User> 
 
 export const registerUser = async (name: string, email: string, password: string): Promise<User> => {
   if (isFirebaseActive()) {
-    // 1. Check if ANY users exist. If 0, make this user an ADMIN.
-    let role: UserRole = 'member';
-    try {
-        const usersSnapshot = await getDocs(collection(db!, "users"));
-        if (usersSnapshot.empty) {
-            role = 'admin';
-            console.log("Creating first user as ADMIN");
-        }
-    } catch (e) {
-        console.warn("Could not check user count, defaulting to member", e);
-    }
-
-    // 2. Create Auth User
+    // 1. Create Auth User (Fast)
     const userCredential = await createUserWithEmailAndPassword(auth!, email, password);
-    await updateProfile(userCredential.user, { displayName: name });
     
+    // Non-blocking profile update
+    updateProfile(userCredential.user, { displayName: name }).catch(e => console.error("Profile update bg error", e));
+    
+    const role: UserRole = 'member'; 
+
     const newUser: User = {
       id: userCredential.user.uid,
       name,
@@ -164,10 +176,16 @@ export const registerUser = async (name: string, email: string, password: string
       phoneNumber: ''
     };
 
-    // 3. Save extended profile to Firestore
-    await setDoc(doc(db!, "users", newUser.id), {
-      name, email, role: role, createdAt: new Date().toISOString(), phoneNumber: ''
-    });
+    // 2. "Fire and Forget" Database Save
+    // We do NOT await this. We return the user immediately so the UI updates instantly.
+    // The data will sync to Firestore in the background.
+    setDoc(doc(db!, "users", newUser.id), {
+      name, 
+      email, 
+      role: role, 
+      createdAt: new Date().toISOString(), 
+      phoneNumber: ''
+    }).catch(e => console.error("Background DB Save Error:", e));
 
     return newUser;
   } else {

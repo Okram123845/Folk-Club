@@ -16,7 +16,9 @@ import {
   setDoc, 
   getDoc,
   arrayUnion,
-  arrayRemove
+  arrayRemove,
+  query,
+  limit
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { sendRealEmail, fetchRealInstagramPosts, sendRSVPConfirmation, translateText } from './integrations';
@@ -159,13 +161,23 @@ export const loginUser = async (email: string, password: string): Promise<User> 
 
 export const registerUser = async (name: string, email: string, password: string): Promise<User> => {
   if (isFirebaseActive()) {
-    // 1. Create Auth User (Fast)
+    // 1. Create Auth User
     const userCredential = await createUserWithEmailAndPassword(auth!, email, password);
     
     // Non-blocking profile update
     updateProfile(userCredential.user, { displayName: name }).catch(e => console.error("Profile update bg error", e));
     
-    const role: UserRole = 'member'; 
+    // 2. Check if this is the FIRST user ever (Make them Admin)
+    let role: UserRole = 'member';
+    try {
+        const q = query(collection(db!, "users"), limit(1));
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) {
+            role = 'admin'; // First user becomes admin
+        }
+    } catch (e) {
+        console.error("Error checking user count, defaulting to member", e);
+    }
 
     const newUser: User = {
       id: userCredential.user.uid,
@@ -176,9 +188,8 @@ export const registerUser = async (name: string, email: string, password: string
       phoneNumber: ''
     };
 
-    // 2. "Fire and Forget" Database Save
-    // We do NOT await this. We return the user immediately so the UI updates instantly.
-    // The data will sync to Firestore in the background.
+    // 3. Save User to DB (Creates the 'users' collection automatically)
+    // We return immediately for UI speed, but this must happen to create the collection
     setDoc(doc(db!, "users", newUser.id), {
       name, 
       email, 

@@ -36,10 +36,10 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSuccess }
       onClose();
     } catch (err: any) {
       console.error(err);
-      if (err.code === 'auth/invalid-credential') {
-        setError("Incorrect email or password.");
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        setError(t('auth_error_invalid_cred'));
       } else if (err.code === 'auth/email-already-in-use') {
-        setError("This email is already registered.");
+        setError(t('auth_error_email_taken'));
       } else {
         setError(err.message || t('auth_error_generic'));
       }

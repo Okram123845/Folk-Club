@@ -23,13 +23,15 @@ import {
   getResources,
   addResource,
   deleteResource,
-  migrateLegacyEvents
+  migrateLegacyEvents,
+  updateUserAvatar
 } from '../services/mockService';
 import { useTranslation } from '../services/translations';
-import { translateText } from '../services/integrations';
+import { translateText, requestNotificationPermission, sendLocalNotification } from '../services/integrations';
 import LanguageSwitcher from './LanguageSwitcher';
 import ConfirmModal from './ConfirmModal';
 import Toast from './Toast';
+import Avatar from './Avatar';
 
 interface DashboardProps {
   user: User;
@@ -38,6 +40,11 @@ interface DashboardProps {
   onUpdateData: () => void;
   onClose: () => void;
 }
+
+const AVATAR_COLORS = [
+  'bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-green-500', 'bg-teal-500', 
+  'bg-blue-500', 'bg-indigo-500', 'bg-purple-500', 'bg-pink-500', 'bg-gray-500'
+];
 
 const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateData, onClose }) => {
   const { t, language } = useTranslation();
@@ -59,9 +66,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   const [localGallery, setLocalGallery] = useState<GalleryItem[]>(gallery);
 
   const [phoneNumber, setPhoneNumber] = useState(user.phoneNumber || '');
+  const [carrier, setCarrier] = useState(user.carrier || '');
+  
+  // Avatar Profile State
+  const [displayAvatar, setDisplayAvatar] = useState(user.avatar || '');
+  const [avatarColor, setAvatarColor] = useState(user.avatarColor || '');
+  const [customInitials, setCustomInitials] = useState(user.customInitials || '');
+
+  // Search State
+  const [eventSearchQuery, setEventSearchQuery] = useState('');
 
   useEffect(() => { setLocalEvents(events); }, [events]);
   useEffect(() => { setLocalGallery(gallery); }, [gallery]);
+  useEffect(() => { 
+      setDisplayAvatar(user.avatar || '');
+      setAvatarColor(user.avatarColor || '');
+      setCustomInitials(user.customInitials || '');
+  }, [user]);
   
   const [selectedContentId, setSelectedContentId] = useState<string>('');
   const [editContentText, setEditContentText] = useState<{en: string, ro: string, fr: string}>({ en: '', ro: '', fr: '' });
@@ -80,6 +101,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   
   const eventImageRef = useRef<HTMLInputElement>(null);
   const eventFormTopRef = useRef<HTMLDivElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   // Gallery Upload State
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
@@ -173,7 +195,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
       const targets: Language[] = ['en', 'ro', 'fr'];
       for (const target of targets) {
         if (target !== descriptionLang && !currentDesc[target]) {
-           currentDesc[target] = await translateText(sourceText, target);
+           currentDesc[target] = await translateText(sourceText, target, descriptionLang);
         }
       }
       
@@ -425,11 +447,47 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
 
   const handleSaveProfile = async () => {
     try {
-      await updateUserProfile(user.id, { phoneNumber });
+      // Save avatar color and initials along with phone/carrier
+      // IMPORTANT: Also save displayAvatar to persist if user cleared their image
+      await updateUserProfile(user.id, { 
+          phoneNumber, 
+          carrier,
+          avatarColor,
+          customInitials,
+          avatar: displayAvatar 
+      });
       showToast("Profile settings saved!", 'success');
+      onUpdateData(); // Force app to refresh user profile immediately
     } catch(e) {
       showToast("Failed to save profile.", 'error');
     }
+  };
+  
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      
+      try {
+          const newAvatarUrl = await updateUserAvatar(user.id, file);
+          setDisplayAvatar(newAvatarUrl);
+          // Clear custom color if they upload an image to avoid confusion
+          setAvatarColor('');
+          showToast('Avatar updated successfully!', 'success');
+          onUpdateData();
+      } catch (err: any) {
+          console.error(err);
+          showToast(t('dash_avatar_error'), 'error');
+      }
+  };
+  
+  const handleEnableNotifications = async () => {
+      const granted = await requestNotificationPermission();
+      if (granted) {
+          showToast("Notifications enabled!", 'success');
+          sendLocalNotification("Notifications Active", "You will now receive instant alerts for RSVPs.");
+      } else {
+          showToast("Permission denied. Check browser settings.", 'error');
+      }
   };
 
   const handleToggleTestimonial = async (id: string) => {
@@ -553,7 +611,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   const renderSidebarContent = () => (
     <div className="flex flex-col h-full">
       <div className="p-6 flex flex-col items-center border-b border-white/10">
-         <img src={user.avatar} alt="Avatar" className="w-20 h-20 rounded-full mb-4 border-4 border-roYellow object-cover shadow-lg" />
+         <Avatar src={displayAvatar} name={user.name} color={avatarColor} initials={customInitials} className="w-20 h-20 rounded-full mb-4 border-4 border-roYellow shadow-lg text-2xl" />
          <h3 className="font-bold text-lg truncate w-full text-center">{user.name}</h3>
          <span className={`text-[10px] uppercase tracking-wider px-3 py-1 rounded-full mt-2 font-bold ${user.role === 'admin' ? 'bg-roRed' : 'bg-roBlue'}`}>
            {user.role}
@@ -598,658 +656,617 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   };
 
   const renderAdminEvents = () => (
-    <div className="space-y-8 animate-fade-in-up pb-10" ref={eventFormTopRef}>
-      <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
-        <div className="flex justify-between items-center mb-6 border-b pb-2">
-            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                <span>{newEvent.id ? '✏️' : '✨'}</span> {t('dash_add_event')}
-            </h3>
-            <button 
-                onClick={handleFixLegacyEvents}
-                className="text-xs bg-orange-50 text-orange-600 px-3 py-1.5 rounded border border-orange-200 hover:bg-orange-100 transition-colors flex items-center gap-1"
-                title="Automatically fix descriptions that are missing translations"
-            >
-                🔧 Fix Legacy Events
-            </button>
-        </div>
-        
-        <form onSubmit={handleAddEvent} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-1">
-            <label htmlFor="event-title" className="block text-sm font-bold text-gray-700">{t('dash_event_title')}</label>
-            <input 
-              id="event-title" type="text" placeholder={t('dash_event_title_ph')}
-              className="p-3 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-roBlue outline-none" 
-              value={newEvent.title || ''} onChange={e => setNewEvent({...newEvent, title: e.target.value})} required 
-            />
-          </div>
-          <div className="space-y-1">
-            <label htmlFor="event-type" className="block text-sm font-bold text-gray-700">{t('dash_gal_type')}</label>
-            <select 
-              id="event-type"
-              className="p-3 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-roBlue outline-none bg-white" 
-              value={newEvent.type} onChange={e => setNewEvent({...newEvent, type: e.target.value as any})}
-            >
-              <option value="performance">{t('event_type_performance')}</option>
-              <option value="workshop">{t('event_type_workshop')}</option>
-              <option value="social">{t('event_type_social')}</option>
-            </select>
-          </div>
-          <div className="space-y-1 md:col-span-2">
-            <label htmlFor="event-date" className="block text-sm font-bold text-gray-700">{t('dash_table_date')}</label>
-            <input 
-              id="event-date" type="date" 
-              className="p-3 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-roBlue outline-none" 
-              value={newEvent.date || ''} onChange={e => setNewEvent({...newEvent, date: e.target.value})} required 
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4 md:col-span-2">
-            <div className="space-y-1">
-              <label htmlFor="event-time" className="block text-sm font-bold text-gray-700">{t('events_label_time')} (Start)</label>
-              <input 
-                id="event-time" type="time" 
-                className="p-3 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-roBlue outline-none" 
-                value={newEvent.time || ''} onChange={e => setNewEvent({...newEvent, time: e.target.value})} required 
-              />
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="event-endtime" className="block text-sm font-bold text-gray-700">{t('events_label_time')} (End)</label>
-              <input 
-                id="event-endtime" type="time" 
-                className="p-3 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-roBlue outline-none" 
-                value={newEvent.endTime || ''} onChange={e => setNewEvent({...newEvent, endTime: e.target.value})} 
-              />
-            </div>
-          </div>
-          <div className="md:col-span-2 space-y-1">
-            <label htmlFor="event-location" className="block text-sm font-bold text-gray-700">{t('contact_label_location')}</label>
-            <input 
-              id="event-location" type="text" placeholder={t('dash_event_loc_ph')}
-              className="p-3 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-roBlue outline-none" 
-              value={newEvent.location || ''} onChange={e => setNewEvent({...newEvent, location: e.target.value})} required 
-            />
-          </div>
-          
-          {/* IMAGE INPUT TOGGLE */}
-          <div className="md:col-span-2 space-y-1">
-             <div className="flex justify-between items-center mb-1">
-                <label htmlFor="event-image" className="block text-sm font-bold text-gray-700">{t('dash_event_image')}</label>
-                <div className="flex text-xs border border-gray-300 rounded-lg overflow-hidden">
-                    <button 
-                        type="button" 
-                        onClick={() => setEventInputType('url')} 
-                        className={`px-3 py-1 font-bold ${eventInputType === 'url' ? 'bg-roBlue text-white' : 'bg-gray-50 text-gray-600'}`}
-                    >
-                        URL
-                    </button>
-                    <button 
-                        type="button" 
-                        onClick={() => setEventInputType('file')} 
-                        className={`px-3 py-1 font-bold ${eventInputType === 'file' ? 'bg-roBlue text-white' : 'bg-gray-50 text-gray-600'}`}
-                    >
-                        Upload
-                    </button>
-                </div>
-             </div>
-             
-             {eventInputType === 'file' ? (
-                 <div className="space-y-2 border-2 border-dashed border-gray-300 rounded-lg p-4 hover:bg-gray-50 transition-colors">
-                    <input 
-                      id="event-image" type="file" ref={eventImageRef} accept="image/*" onChange={handleEventImageUpload}
-                      className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-roBlue file:text-white hover:file:bg-blue-700 cursor-pointer"
-                    />
-                 </div>
-             ) : (
-                 <input 
-                    type="text" 
-                    placeholder="https://example.com/image.jpg"
-                    className="p-3 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-roBlue outline-none"
-                    value={newEvent.image && !newEvent.image.startsWith('data:') ? newEvent.image : ''}
-                    onChange={e => setNewEvent({...newEvent, image: e.target.value})}
-                 />
-             )}
-             
-             {newEvent.image && (
-                <div className="relative h-48 w-full rounded-lg overflow-hidden border border-gray-200 group mt-4">
-                  <img src={newEvent.image} alt="Event Preview" className="w-full h-full object-cover" />
-                  <button type="button" onClick={() => { setNewEvent({ ...newEvent, image: undefined }); if (eventImageRef.current) eventImageRef.current.value = ''; }} className="absolute top-2 right-2 bg-red-600 text-white p-2 rounded-full shadow-lg hover:bg-red-700" title="Remove Image">✕</button>
-                </div>
-             )}
-          </div>
-          
-          <div className="md:col-span-2 space-y-3">
-            <div className="flex items-center justify-between">
-               <label htmlFor="event-description" className="block text-sm font-bold text-gray-700">{t('dash_event_desc')}</label>
-               <div className="flex gap-2 items-center">
-                 <button 
-                    type="button"
-                    onClick={handleAutoTranslate}
-                    disabled={isTranslating}
-                    className="text-xs bg-purple-100 text-purple-700 px-3 py-1.5 rounded-md font-bold hover:bg-purple-200 transition-colors flex items-center gap-1 mr-2"
-                    title="Automatically fill empty language fields based on current text"
-                 >
-                    {isTranslating ? '...' : '✨ Auto-Translate'}
-                 </button>
-                 <div className="flex gap-1">
-                    <button type="button" onClick={() => setDescriptionLang('en')} className={`text-xs px-3 py-1.5 rounded-md font-bold transition-colors border ${descriptionLang === 'en' ? 'bg-roBlue text-white border-roBlue' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-200'}`}>EN</button>
-                    <button type="button" onClick={() => setDescriptionLang('ro')} className={`text-xs px-3 py-1.5 rounded-md font-bold transition-colors border ${descriptionLang === 'ro' ? 'bg-roBlue text-white border-roBlue' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-200'}`}>RO</button>
-                    <button type="button" onClick={() => setDescriptionLang('fr')} className={`text-xs px-3 py-1.5 rounded-md font-bold transition-colors border ${descriptionLang === 'fr' ? 'bg-roBlue text-white border-roBlue' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-200'}`}>FR</button>
-                 </div>
-               </div>
-            </div>
-            <textarea 
-              id="event-description" placeholder={`${t('dash_event_desc_ph')} ${descriptionLang === 'ro' ? 'Română' : descriptionLang === 'fr' ? 'Français' : 'English'}`}
-              className="p-3 border border-gray-300 rounded-lg w-full min-h-[120px] focus:ring-2 focus:ring-roBlue outline-none transition-all" 
-              value={getEventDescription()}
-              onChange={e => {
-                  let currentDescObj = newEvent.description;
-                  if (typeof currentDescObj !== 'object' || currentDescObj === null) {
-                      const val = (currentDescObj as string) || '';
-                      currentDescObj = { en: val, ro: val, fr: val };
-                  }
-                  setNewEvent({
-                      ...newEvent, 
-                      description: { ...(currentDescObj as any), [descriptionLang]: e.target.value }
-                  });
-              }}
-            />
-            <p className="text-xs text-gray-500 italic flex items-center gap-1">
-               <span className="text-roBlue">ℹ</span> Editing <strong>{descriptionLang.toUpperCase()}</strong> version. Use the buttons above to translate for other languages.
-            </p>
-          </div>
-
-          <div className="md:col-span-2 flex gap-4">
+    <div className="space-y-8 animate-fade-in-up pb-10">
+      <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100" ref={eventFormTopRef}>
+        <div className="flex justify-between items-center mb-6">
+            <h3 className="font-bold text-xl text-slate-800 border-l-4 border-roBlue pl-3">{t('dash_add_event')}</h3>
             {newEvent.id && (
-              <button type="button" onClick={handleCancelEdit} className="flex-1 bg-gray-500 text-white py-4 rounded-lg hover:bg-gray-600 shadow-lg font-bold text-lg flex items-center justify-center gap-2"><span>🚫</span> {t('dash_cancel')}</button>
+                <button onClick={handleCancelEdit} className="text-sm text-red-500 font-bold hover:underline">{t('dash_cancel')}</button>
             )}
-            <button type="submit" className="flex-1 bg-green-600 text-white py-4 rounded-lg hover:bg-green-700 shadow-lg font-bold text-lg flex items-center justify-center gap-2"><span>💾</span> {newEvent.id ? t('dash_update') : t('dash_save')}</button>
+        </div>
+        <form onSubmit={handleAddEvent} className="grid md:grid-cols-2 gap-6">
+          <div className="space-y-4">
+             <div>
+               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{t('dash_event_title')}</label>
+               <input className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-roBlue outline-none font-bold" value={newEvent.title || ''} onChange={e => setNewEvent({...newEvent, title: e.target.value})} placeholder={t('dash_event_title_ph')} required />
+             </div>
+             <div className="grid grid-cols-2 gap-4">
+               <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{t('dash_table_date')}</label>
+                  <input type="date" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg" value={newEvent.date || ''} onChange={e => setNewEvent({...newEvent, date: e.target.value})} required />
+               </div>
+               <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{t('events_label_time')}</label>
+                  <div className="flex gap-2">
+                      <input type="time" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg" value={newEvent.time || ''} onChange={e => setNewEvent({...newEvent, time: e.target.value})} required />
+                      <input type="time" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg" value={newEvent.endTime || ''} onChange={e => setNewEvent({...newEvent, endTime: e.target.value})} />
+                  </div>
+               </div>
+             </div>
+             <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{t('events_label_location')}</label>
+                <input className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg" value={newEvent.location || ''} onChange={e => setNewEvent({...newEvent, location: e.target.value})} placeholder={t('dash_event_loc_ph')} required />
+             </div>
+             <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Type</label>
+                <select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg" value={newEvent.type || 'performance'} onChange={(e: any) => setNewEvent({...newEvent, type: e.target.value})}>
+                    <option value="performance">Performance</option>
+                    <option value="workshop">Workshop</option>
+                    <option value="social">Social</option>
+                </select>
+             </div>
+          </div>
+          <div className="space-y-4">
+             <div>
+                <div className="flex justify-between items-center mb-1">
+                   <label className="block text-xs font-bold text-gray-500 uppercase">{t('dash_event_desc')} ({descriptionLang.toUpperCase()})</label>
+                   <div className="flex gap-2">
+                       <LanguageSwitcher />
+                       <button type="button" onClick={handleAutoTranslate} disabled={isTranslating} className="text-xs bg-roBlue/10 text-roBlue px-2 py-1 rounded hover:bg-roBlue/20 font-bold" title="Auto-translate to empty fields">
+                          {isTranslating ? '...' : '✨ Auto-Translate'}
+                       </button>
+                   </div>
+                </div>
+                <textarea 
+                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg h-32 resize-none" 
+                    value={getEventDescription()} 
+                    onChange={e => {
+                        const val = e.target.value;
+                        const currentDesc = typeof newEvent.description === 'string' 
+                            ? { en: newEvent.description, ro: '', fr: '' } 
+                            : { ...(newEvent.description as any) || { en: '', ro: '', fr: '' } };
+                        currentDesc[descriptionLang] = val;
+                        setNewEvent({ ...newEvent, description: currentDesc });
+                    }}
+                    placeholder={`${t('dash_event_desc_ph')} ${descriptionLang.toUpperCase()}...`} 
+                />
+             </div>
+             <div>
+                <div className="flex justify-between mb-1">
+                    <label className="block text-xs font-bold text-gray-500 uppercase">{t('dash_event_image')}</label>
+                    <div className="flex gap-2">
+                        <button type="button" onClick={() => setEventInputType('url')} className={`text-xs px-2 py-1 rounded ${eventInputType === 'url' ? 'bg-gray-200 font-bold' : 'text-gray-400'}`}>URL</button>
+                        <button type="button" onClick={() => setEventInputType('file')} className={`text-xs px-2 py-1 rounded ${eventInputType === 'file' ? 'bg-gray-200 font-bold' : 'text-gray-400'}`}>File</button>
+                    </div>
+                </div>
+                {eventInputType === 'url' ? (
+                    <input className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm" value={newEvent.image || ''} onChange={e => setNewEvent({...newEvent, image: e.target.value})} placeholder="https://..." />
+                ) : (
+                    <input type="file" ref={eventImageRef} className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-sm" accept="image/*" onChange={handleEventImageUpload} />
+                )}
+                {newEvent.image && <img src={newEvent.image} alt="Preview" className="h-20 w-auto mt-2 rounded border border-gray-200 object-cover" />}
+             </div>
+             <button type="submit" className="w-full py-3 bg-roBlue text-white rounded-lg font-bold hover:bg-blue-900 shadow-md transition-all mt-2">
+                {newEvent.id ? t('dash_update') : t('dash_save')}
+             </button>
           </div>
         </form>
       </div>
-      
-      {/* Event List Table */}
-      <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
-          <div className="overflow-x-auto">
-              <table className="w-full text-left min-w-[700px]">
-                  <thead className="bg-slate-50 border-b">
-                      <tr>
-                          <th className="p-4 text-sm font-bold text-gray-600 uppercase">{t('dash_table_event')}</th>
-                          <th className="p-4 text-sm font-bold text-gray-600 uppercase">{t('dash_table_date')}</th>
-                          <th className="p-4 text-sm font-bold text-gray-600 uppercase">{t('dash_table_attendees')}</th>
-                          <th className="p-4 text-sm font-bold text-gray-600 uppercase text-right">{t('dash_table_actions')}</th>
-                      </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                      {localEvents.map(ev => {
-                          const safeAttendees = ev.attendees || [];
-                          const attendeesList = allUsers.filter(u => safeAttendees.includes(u.id));
-                          return (
-                              <tr key={ev.id} className="hover:bg-slate-50 transition-colors">
-                                  <td className="p-4">
-                                      <div className="flex items-center gap-4">
-                                          {ev.image ? <img src={ev.image} alt="" className="w-12 h-12 rounded-lg object-cover shadow-sm" /> : <div className="w-12 h-12 rounded-lg bg-gray-200 flex items-center justify-center text-xl">📅</div>}
-                                          <div>
-                                              <div className="font-bold text-slate-800">{ev.title}</div>
-                                              <div className="text-xs text-gray-500">{ev.location}</div>
-                                          </div>
-                                      </div>
-                                  </td>
-                                  <td className="p-4 text-gray-600 font-medium">{new Date(ev.date).toLocaleDateString()} <br/><span className="text-xs text-gray-400">{ev.time} EST</span></td>
-                                  <td className="p-4">
-                                      <div className="flex flex-col items-start gap-1">
-                                          <span className="bg-blue-100 text-blue-800 py-1 px-3 rounded-full text-xs font-bold">{attendeesList.length} {t('dash_table_attendees')}</span>
-                                          {attendeesList.length > 0 && (
-                                              <details className="text-xs text-gray-600 w-full mt-1 border border-blue-100 rounded bg-blue-50/50 p-2">
-                                                  <summary className="cursor-pointer hover:text-roBlue font-bold select-none flex items-center gap-1"><span>👥</span> View List</summary>
-                                                  <ul className="list-disc pl-4 mt-2 space-y-1 max-h-[100px] overflow-y-auto">{attendeesList.map(u => <li key={u.id}>{u.name}</li>)}</ul>
-                                              </details>
-                                          )}
-                                      </div>
-                                  </td>
-                                  <td className="p-4 text-right">
-                                      <div className="flex justify-end gap-2">
-                                          <button onClick={() => handleEditEvent(ev)} className="text-blue-500 hover:text-blue-700 bg-blue-50 p-2 rounded-lg">✏️</button>
-                                          <button onClick={() => requestDeleteEvent(ev)} className="text-red-500 hover:text-red-700 bg-red-50 p-2 rounded-lg">🗑️</button>
-                                      </div>
-                                  </td>
-                              </tr>
-                          );
-                      })}
-                  </tbody>
-              </table>
-          </div>
-      </div>
-    </div>
-  );
 
-  const renderAdminGallery = () => {
-    const pendingItems = localGallery.filter(item => item.approved === false);
-    const approvedItems = localGallery.filter(item => item.approved !== false);
-
-    return (
-    <div className="space-y-8 animate-fade-in-up pb-10">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
-          <h3 className="font-bold mb-4 text-lg flex items-center gap-2"><span>📤</span> {t('dash_upload_title')}</h3>
-          
-          <div className="mb-4 space-y-3">
-              <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">{t('dash_gal_event_link')}</label>
-                  <select 
-                     className="w-full p-2 border rounded-lg bg-white"
-                     value={selectedEventId}
-                     onChange={(e) => setSelectedEventId(e.target.value)}
-                  >
-                      <option value="">-- General Gallery --</option>
-                      {localEvents.map(e => (
-                          <option key={e.id} value={e.id}>{e.title}</option>
-                      ))}
-                  </select>
-              </div>
-              <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">{t('dash_gal_type')}</label>
-                  <div className="flex gap-2">
-                      <button onClick={() => setMediaType('image')} className={`flex-1 py-2 rounded text-sm font-bold ${mediaType === 'image' ? 'bg-roBlue text-white' : 'bg-gray-100'}`}>Image</button>
-                      <button onClick={() => setMediaType('video')} className={`flex-1 py-2 rounded text-sm font-bold ${mediaType === 'video' ? 'bg-roBlue text-white' : 'bg-gray-100'}`}>{t('dash_gal_video_url')}</button>
-                  </div>
-              </div>
-          </div>
-
-          {mediaType === 'image' ? (
-            <label className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:bg-gray-50 hover:border-roBlue transition-all block group">
-                <div className="text-4xl mb-3 group-hover:scale-110 transition-transform">📁</div>
-                <p className="text-gray-600 font-medium group-hover:text-roBlue">{t('dash_upload_text')}</p>
-                <input type="file" accept="image/*" className="hidden" onChange={handleImageFileChange} />
-            </label>
-          ) : (
-             <div className="space-y-2">
-                <label className="block text-sm font-bold text-gray-700">{t('dash_gal_video_url')}</label>
-                <div className="flex gap-2">
-                    <input 
-                       type="text" 
-                       placeholder="https://youtube.com/..." 
-                       className="flex-1 p-3 border rounded-lg focus:ring-2 focus:ring-roBlue outline-none"
-                       value={videoUrl}
-                       onChange={(e) => setVideoUrl(e.target.value)}
-                    />
-                    <button 
-                       onClick={handleMediaUpload} 
-                       className="bg-green-600 text-white px-4 rounded-lg font-bold hover:bg-green-700"
-                    >
-                       Add
-                    </button>
-                </div>
-                <p className="text-xs text-gray-500">{t('dash_gal_video_hint')}</p>
-             </div>
-          )}
-        </div>
-        
-        <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100 flex flex-col items-center justify-center text-center">
-          <h3 className="font-bold mb-4 text-lg text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600">{t('dash_ig_title')}</h3>
-          <p className="text-sm text-gray-500 mb-6 max-w-xs">{t('dash_ig_text')}</p>
-          <button onClick={handleInstagramSync} disabled={isSyncing} className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-8 py-3 rounded-full hover:shadow-lg transition-all transform hover:-translate-y-0.5 disabled:opacity-50 flex items-center gap-2 font-bold w-full sm:w-auto justify-center">
-            {isSyncing ? t('dash_ig_syncing') : `🔄 ${t('dash_ig_btn')}`}
-          </button>
-        </div>
-      </div>
-      
-      {/* Pending Reviews */}
-      {pendingItems.length > 0 && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
-              <h3 className="font-bold text-lg text-yellow-800 mb-4">{t('dash_gal_pending')} ({pendingItems.length})</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {pendingItems.map(item => (
-                      <div key={item.id} className="relative aspect-square bg-white rounded-lg shadow-sm overflow-hidden group">
-                           {item.type === 'video' ? <div className="w-full h-full bg-black flex items-center justify-center text-white text-2xl">▶️</div> : <img src={item.url} alt="" className="w-full h-full object-cover" />}
-                           <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition-opacity">
-                               <button onClick={() => handleApproveGalleryItem(item.id)} className="bg-green-500 text-white p-2 rounded-full hover:bg-green-600" title="Approve">✓</button>
-                               <button onClick={() => requestDeleteGallery(item)} className="bg-red-500 text-white p-2 rounded-full hover:bg-red-600" title="Reject">✕</button>
-                           </div>
-                           <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] p-1 truncate">
-                               {item.caption}
-                           </div>
-                      </div>
-                  ))}
-              </div>
-          </div>
-      )}
-
-      {/* Approved Gallery */}
-      <h3 className="font-bold text-lg text-slate-800">{t('dash_gal_approved')}</h3>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-        {approvedItems.map(item => (
-          <div key={item.id} className="relative group aspect-square bg-gray-200 rounded-xl overflow-hidden shadow-sm">
-            {item.type === 'video' ? (
-                <div className="w-full h-full bg-black flex items-center justify-center text-white">
-                   <div className="text-4xl">▶️</div>
-                </div>
-            ) : (
-                <img src={item.url} alt="Admin view" className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-            )}
-            
-            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3 justify-between">
-                <div className="flex flex-col items-start gap-1">
-                    <span className="text-white text-[10px] uppercase font-bold tracking-wider bg-black/60 backdrop-blur px-2 py-1 rounded">{item.source}</span>
-                    {item.eventId && <span className="text-white text-[10px] bg-blue-600 px-2 py-1 rounded">Linked</span>}
-                </div>
-                <button onClick={() => requestDeleteGallery(item)} className="text-white bg-red-600 p-1.5 rounded-full hover:bg-red-700" title="Delete">🗑️</button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-  };
-
-  const renderAdminUsers = () => (
-    <div className="space-y-6 animate-fade-in-up pb-10">
       <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
+        <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+            <h3 className="font-bold text-gray-700">{localEvents.length} Events</h3>
+            <div className="flex gap-2">
+                <button onClick={handleFixLegacyEvents} className="text-xs bg-yellow-100 text-yellow-800 px-3 py-1 rounded hover:bg-yellow-200">⚠️ Fix Translations</button>
+                <input type="text" placeholder={t('dash_search_events')} className="bg-white border border-gray-200 rounded-lg px-3 py-1 text-sm outline-none focus:border-roBlue" value={eventSearchQuery} onChange={e => setEventSearchQuery(e.target.value)} />
+            </div>
+        </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left min-w-[600px]">
-            <thead className="bg-slate-50 border-b">
-              <tr>
-                <th className="p-4 text-sm font-bold text-gray-600 uppercase">{t('dash_table_user')}</th>
-                <th className="p-4 text-sm font-bold text-gray-600 uppercase">{t('dash_table_email')}</th>
-                <th className="p-4 text-sm font-bold text-gray-600 uppercase">{t('dash_table_role')}</th>
-                <th className="p-4 text-sm font-bold text-gray-600 uppercase text-right">{t('dash_table_actions')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {allUsers.map(u => (
-                <tr key={u.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="p-4 flex items-center gap-3"><img src={u.avatar} alt="" className="w-10 h-10 rounded-full border border-gray-200" /><span className="font-bold text-slate-800">{u.name}</span></td>
-                  <td className="p-4 text-gray-600">{u.email}</td>
-                  <td className="p-4"><span className={`px-3 py-1 rounded-full text-xs font-bold uppercase inline-flex items-center gap-1 ${u.role === 'admin' ? 'bg-roRed/10 text-roRed' : 'bg-blue-100 text-blue-800'}`}>{u.role}</span></td>
-                  <td className="p-4 text-right">
-                    <div className="flex justify-end gap-2">
-                       <button onClick={() => handleToggleRole(u)} disabled={u.id === user.id} className={`text-sm font-bold px-3 py-1 rounded transition-colors ${u.id === user.id ? 'text-gray-400 cursor-not-allowed bg-gray-100' : 'text-roBlue hover:bg-roBlue hover:text-white border border-roBlue'}`}>{u.role === 'admin' ? t('dash_demote') : t('dash_promote')}</button>
-                       <button onClick={() => requestDeleteUser(u)} disabled={u.id === user.id} className={`p-1.5 rounded text-red-500 hover:bg-red-50 ${u.id === user.id ? 'opacity-30 cursor-not-allowed' : ''}`}>🗑️</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-  
-  const renderAdminTestimonials = () => (
-    <div className="space-y-6 animate-fade-in-up pb-10">
-        <div className="grid md:grid-cols-2 gap-4 md:gap-6">
-            <div className="bg-white p-6 rounded-xl shadow-md border-l-4 border-yellow-400">
-                <h3 className="font-bold text-lg mb-2 text-slate-800">{t('dash_test_pending')}</h3>
-                <p className="text-gray-500 text-sm">{t('dash_test_pending_desc')}</p>
-            </div>
-            <div className="bg-white p-6 rounded-xl shadow-md border-l-4 border-green-500">
-                <h3 className="font-bold text-lg mb-2 text-slate-800">{t('dash_test_live')}</h3>
-                <p className="text-gray-500 text-sm">{allTestimonials.filter(t => t.approved).length} {t('dash_test_live_desc')}</p>
-            </div>
-        </div>
-        {editingTestimonial && (
-          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-             <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg animate-fade-in">
-                <h3 className="text-xl font-bold mb-4">{t('dash_test_edit')}</h3>
-                <form onSubmit={handleSaveTestimonialEdit} className="space-y-4">
-                    <div><label className="block text-sm font-bold text-gray-700 mb-1">{t('dash_test_author')}</label><input type="text" className="w-full p-2 border rounded-lg" value={editingTestimonial.author} onChange={e => setEditingTestimonial({...editingTestimonial, author: e.target.value})}/></div>
-                    <div><label className="block text-sm font-bold text-gray-700 mb-1">{t('dash_test_content')}</label><textarea className="w-full p-2 border rounded-lg h-32" value={editingTestimonial.text} onChange={e => setEditingTestimonial({...editingTestimonial, text: e.target.value})}/></div>
-                    <div className="flex gap-2 justify-end"><button type="button" onClick={() => setEditingTestimonial(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">{t('dash_cancel')}</button><button type="submit" className="px-4 py-2 bg-roBlue text-white rounded-lg hover:bg-blue-900">{t('dash_save')}</button></div>
-                </form>
-             </div>
-          </div>
-        )}
-        <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left min-w-[700px]">
-                <thead className="bg-slate-50 border-b">
-                    <tr><th className="p-4 text-sm font-bold text-gray-600 uppercase">{t('dash_test_author')}</th><th className="p-4 text-sm font-bold text-gray-600 uppercase">{t('dash_test_content')}</th><th className="p-4 text-sm font-bold text-gray-600 uppercase">{t('dash_test_status')}</th><th className="p-4 text-sm font-bold text-gray-600 uppercase text-right">{t('dash_table_actions')}</th></tr>
+            <table className="w-full text-left border-collapse">
+                <thead>
+                    <tr className="bg-gray-50 text-gray-500 text-xs uppercase">
+                        <th className="p-4">{t('dash_table_event')}</th>
+                        <th className="p-4">{t('dash_table_date')}</th>
+                        <th className="p-4">{t('dash_table_attendees')}</th>
+                        <th className="p-4 text-right">{t('dash_table_actions')}</th>
+                    </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                    {allTestimonials.map(testimonial => (
-                    <tr key={testimonial.id} className="hover:bg-slate-50">
-                        <td className="p-4"><div className="font-bold text-slate-800">{testimonial.author}</div><div className="text-xs text-gray-500">{testimonial.role}</div></td>
-                        <td className="p-4 text-sm text-gray-600 max-w-xs leading-relaxed italic">"{testimonial.text}"</td>
-                        <td className="p-4">{testimonial.approved ? <span className="text-green-700 bg-green-100 px-2 py-1 rounded text-xs font-bold border border-green-200">{t('dash_status_approved')}</span> : <span className="text-yellow-700 bg-yellow-100 px-2 py-1 rounded text-xs font-bold border border-yellow-200">{t('dash_status_pending')}</span>}</td>
-                        <td className="p-4 text-right">
-                            <div className="flex justify-end gap-2">
-                              <button onClick={() => setEditingTestimonial(testimonial)} className="text-blue-500 hover:text-blue-700 bg-blue-50 p-2 rounded-lg">✏️</button>
-                              <button onClick={() => handleToggleTestimonial(testimonial.id)} className={`text-xs font-bold px-3 py-1 rounded ${testimonial.approved ? 'bg-gray-100 text-gray-600' : 'bg-green-600 text-white'}`}>{testimonial.approved ? t('dash_btn_hide') : t('dash_btn_approve')}</button>
-                              <button onClick={() => requestDeleteTestimonial(testimonial)} className="bg-red-50 text-red-500 p-1.5 rounded">🗑️</button>
-                            </div>
-                        </td>
-                    </tr>
+                    {localEvents.filter(e => e.title.toLowerCase().includes(eventSearchQuery.toLowerCase())).map(ev => (
+                        <tr key={ev.id} className="hover:bg-blue-50/50 transition-colors group">
+                            <td className="p-4 font-bold text-slate-800">{ev.title}</td>
+                            <td className="p-4 text-sm text-gray-600">{ev.date}</td>
+                            <td className="p-4 text-sm text-gray-600">{ev.attendees.length}</td>
+                            <td className="p-4 text-right">
+                                <button onClick={() => handleEditEvent(ev)} className="text-roBlue hover:text-blue-800 font-bold text-sm mr-3">Edit</button>
+                                <button onClick={() => requestDeleteEvent(ev)} className="text-red-400 hover:text-red-600 font-bold text-sm">Delete</button>
+                            </td>
+                        </tr>
                     ))}
                 </tbody>
-              </table>
+            </table>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderAdminGallery = () => (
+    <div className="space-y-8 animate-fade-in-up pb-10">
+      <div className="grid md:grid-cols-2 gap-8">
+         <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
+             <h3 className="font-bold text-lg mb-4 text-slate-800">{t('dash_upload_title')}</h3>
+             <form onSubmit={handleMediaUpload} className="space-y-4">
+                 <div>
+                     <label className="block text-xs font-bold text-gray-500 uppercase mb-2">{t('dash_gal_type')}</label>
+                     <div className="flex gap-4">
+                         <label className="flex items-center gap-2 cursor-pointer p-3 border rounded-lg hover:bg-gray-50 flex-1">
+                             <input type="radio" name="mediaType" checked={mediaType === 'image'} onChange={() => setMediaType('image')} />
+                             <span>Image</span>
+                         </label>
+                         <label className="flex items-center gap-2 cursor-pointer p-3 border rounded-lg hover:bg-gray-50 flex-1">
+                             <input type="radio" name="mediaType" checked={mediaType === 'video'} onChange={() => setMediaType('video')} />
+                             <span>Video</span>
+                         </label>
+                     </div>
+                 </div>
+                 
+                 {mediaType === 'image' ? (
+                    <label className="block w-full border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:bg-gray-50 transition-colors">
+                        <span className="text-roBlue font-bold block mb-1">📁 {t('dash_upload_text')}</span>
+                        <span className="text-xs text-gray-400">Supports JPG, PNG (Max 5MB)</span>
+                        <input type="file" accept="image/*" className="hidden" onChange={handleImageFileChange} />
+                    </label>
+                 ) : (
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{t('dash_gal_video_url')}</label>
+                        <input className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg" value={videoUrl} onChange={e => setVideoUrl(e.target.value)} placeholder="https://youtube.com/..." />
+                        <p className="text-xs text-gray-400 mt-1">{t('dash_gal_video_hint')}</p>
+                    </div>
+                 )}
+                 
+                 <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{t('dash_gal_event_link')}</label>
+                    <select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg" value={selectedEventId} onChange={e => setSelectedEventId(e.target.value)}>
+                        <option value="">-- None --</option>
+                        {localEvents.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
+                    </select>
+                 </div>
+                 
+                 {mediaType === 'video' && (
+                     <button type="submit" className="w-full py-3 bg-roBlue text-white rounded-lg font-bold hover:bg-blue-900 shadow-md">Add Video</button>
+                 )}
+             </form>
+         </div>
+
+         <div className="bg-gradient-to-br from-purple-600 to-pink-600 p-6 rounded-xl shadow-md text-white">
+             <div className="flex items-center gap-3 mb-4">
+                 <div className="text-3xl">📸</div>
+                 <h3 className="font-bold text-lg">{t('dash_ig_title')}</h3>
+             </div>
+             <p className="opacity-90 mb-6">{t('dash_ig_text')}</p>
+             <button onClick={handleInstagramSync} disabled={isSyncing} className="w-full py-3 bg-white text-purple-600 rounded-lg font-bold hover:bg-gray-100 shadow-md disabled:opacity-70">
+                 {isSyncing ? t('dash_ig_syncing') : t('dash_ig_btn')}
+             </button>
+         </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
+         <div className="p-4 border-b border-gray-100 bg-gray-50"><h3 className="font-bold text-slate-800">{t('dash_gal_pending')}</h3></div>
+         <div className="p-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {localGallery.filter(i => !i.approved).length === 0 && <p className="col-span-full text-gray-400 text-center py-4">No pending items.</p>}
+            {localGallery.filter(i => !i.approved).map(item => (
+                <div key={item.id} className="relative group rounded-lg overflow-hidden aspect-square bg-gray-100">
+                    <img src={item.url} className="w-full h-full object-cover opacity-50" alt="Pending" />
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                        <button onClick={() => handleApproveGalleryItem(item.id)} className="bg-green-500 text-white p-2 rounded-full shadow hover:bg-green-600">✓</button>
+                        <button onClick={() => requestDeleteGallery(item)} className="bg-red-500 text-white p-2 rounded-full shadow hover:bg-red-600">✕</button>
+                    </div>
+                </div>
+            ))}
+         </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
+          <div className="p-4 border-b border-gray-100 bg-gray-50"><h3 className="font-bold text-slate-800">{t('dash_gal_approved')}</h3></div>
+          <div className="p-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+             {localGallery.filter(i => i.approved).map(item => (
+                 <div key={item.id} className="relative group rounded-lg overflow-hidden aspect-square bg-gray-100 cursor-pointer">
+                     <img src={item.url} className="w-full h-full object-cover transition-transform group-hover:scale-110" alt="Gallery" />
+                     {item.type === 'video' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><span className="text-4xl shadow-lg">▶️</span></div>}
+                     <button onClick={() => requestDeleteGallery(item)} className="absolute top-2 right-2 bg-red-600 text-white w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md">✕</button>
+                 </div>
+             ))}
+          </div>
+      </div>
+    </div>
+  );
+
+  const renderAdminUsers = () => (
+    <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden animate-fade-in-up">
+        <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+            <h3 className="font-bold text-xl text-slate-800">{allUsers.length} {t('dash_tab_users')}</h3>
+        </div>
+        <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+                <thead>
+                    <tr className="bg-gray-50 text-gray-500 text-xs uppercase">
+                        <th className="p-4">{t('dash_table_user')}</th>
+                        <th className="p-4">{t('dash_table_email')}</th>
+                        <th className="p-4">{t('dash_table_role')}</th>
+                        <th className="p-4 text-right">{t('dash_table_actions')}</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                    {allUsers.map(u => (
+                        <tr key={u.id} className="hover:bg-gray-50 transition-colors">
+                            <td className="p-4 flex items-center gap-3">
+                                <Avatar src={u.avatar} name={u.name} color={u.avatarColor} initials={u.customInitials} className="w-8 h-8 rounded-full" />
+                                <span className="font-bold text-slate-800">{u.name}</span>
+                            </td>
+                            <td className="p-4 text-sm text-gray-600">{u.email}</td>
+                            <td className="p-4">
+                                <span className={`text-xs uppercase font-bold px-2 py-1 rounded-full ${u.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                    {u.role}
+                                </span>
+                            </td>
+                            <td className="p-4 text-right flex justify-end gap-3">
+                                <button onClick={() => handleToggleRole(u)} className="text-xs font-bold text-gray-500 hover:text-roBlue border border-gray-200 px-2 py-1 rounded hover:bg-gray-100">
+                                    {u.role === 'admin' ? t('dash_demote') : t('dash_promote')}
+                                </button>
+                                <button onClick={() => requestDeleteUser(u)} className="text-xs font-bold text-red-400 hover:text-red-600 border border-red-100 px-2 py-1 rounded hover:bg-red-50">
+                                    {t('dash_delete')}
+                                </button>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    </div>
+  );
+
+  const renderAdminTestimonials = () => (
+    <div className="space-y-8 animate-fade-in-up pb-10">
+        <div className="grid md:grid-cols-2 gap-8">
+            <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
+                <div className="p-4 border-b border-gray-100 bg-orange-50"><h3 className="font-bold text-orange-800">{t('dash_test_pending')}</h3></div>
+                <div className="divide-y divide-gray-100 max-h-[400px] overflow-y-auto">
+                    {allTestimonials.filter(t => !t.approved).length === 0 && <p className="p-6 text-center text-gray-400">No pending testimonials.</p>}
+                    {allTestimonials.filter(t => !t.approved).map(t => (
+                        <div key={t.id} className="p-4 hover:bg-gray-50">
+                            <p className="text-sm italic text-gray-600 mb-2">"{t.text}"</p>
+                            <div className="flex justify-between items-end">
+                                <p className="text-xs font-bold text-slate-800">- {t.author} <span className="text-gray-400">({t.role})</span></p>
+                                <div className="flex gap-2">
+                                    <button onClick={() => handleToggleTestimonial(t.id)} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-bold hover:bg-green-200">{t('dash_btn_approve')}</button>
+                                    <button onClick={() => requestDeleteTestimonial(t)} className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded font-bold hover:bg-red-200">{t('dash_btn_remove')}</button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+            
+            <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
+                <div className="p-4 border-b border-gray-100 bg-green-50"><h3 className="font-bold text-green-800">{t('dash_test_live')}</h3></div>
+                <div className="divide-y divide-gray-100 max-h-[400px] overflow-y-auto">
+                    {allTestimonials.filter(t => t.approved).length === 0 && <p className="p-6 text-center text-gray-400">No active testimonials.</p>}
+                    {allTestimonials.filter(t => t.approved).map(t => (
+                         <div key={t.id} className="p-4 hover:bg-gray-50 group">
+                            {editingTestimonial?.id === t.id ? (
+                                <form onSubmit={handleSaveTestimonialEdit} className="space-y-2">
+                                    <input className="w-full text-xs p-1 border rounded" value={editingTestimonial.author} onChange={e => setEditingTestimonial({...editingTestimonial, author: e.target.value})} placeholder="Author" />
+                                    <textarea className="w-full text-sm p-2 border rounded resize-none" rows={3} value={editingTestimonial.text} onChange={e => setEditingTestimonial({...editingTestimonial, text: e.target.value})} />
+                                    <div className="flex gap-2 justify-end">
+                                        <button type="button" onClick={() => setEditingTestimonial(null)} className="text-xs text-gray-500">Cancel</button>
+                                        <button type="submit" className="text-xs bg-roBlue text-white px-3 py-1 rounded">Save</button>
+                                    </div>
+                                </form>
+                            ) : (
+                                <>
+                                    <p className="text-sm italic text-gray-600 mb-2">"{t.text}"</p>
+                                    <div className="flex justify-between items-end">
+                                        <p className="text-xs font-bold text-slate-800">- {t.author}</p>
+                                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button onClick={() => setEditingTestimonial(t)} className="text-xs text-roBlue font-bold hover:underline">Edit</button>
+                                            <button onClick={() => handleToggleTestimonial(t.id)} className="text-xs text-orange-500 font-bold hover:underline">{t('dash_btn_hide')}</button>
+                                            <button onClick={() => requestDeleteTestimonial(t)} className="text-xs text-red-500 font-bold hover:underline">Delete</button>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                         </div>
+                    ))}
+                </div>
             </div>
         </div>
     </div>
   );
 
   const renderAdminContent = () => (
-    <div className="space-y-6 animate-fade-in-up pb-10">
-      <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
-        <h3 className="text-xl font-bold mb-6 text-slate-800 border-b pb-2 flex items-center gap-2"><span>✏️</span> {t('dash_content_title')}</h3>
-        <div className="space-y-6">
-          <div>
-             <label htmlFor="content-selector" className="block text-sm font-bold text-gray-700 mb-2">{t('dash_content_select')}</label>
-             <select id="content-selector" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-roBlue outline-none bg-white font-bold text-gray-700" value={selectedContentId} onChange={(e) => handleContentSelect(e.target.value)}>
-               {pageContents.map(c => <option key={c.id} value={c.id}>{c.description}</option>)}
-             </select>
-          </div>
-          <div className="grid gap-6">
-            <div className="space-y-1"><label className="block text-sm font-bold text-gray-700">🇬🇧 {t('dash_content_en')}</label><textarea rows={4} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-roBlue outline-none font-medium" value={editContentText.en} onChange={(e) => setEditContentText({...editContentText, en: e.target.value})}/></div>
-            <div className="space-y-1"><label className="block text-sm font-bold text-gray-700">🇷🇴 {t('dash_content_ro')}</label><textarea rows={4} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-roBlue outline-none font-medium" value={editContentText.ro} onChange={(e) => setEditContentText({...editContentText, ro: e.target.value})}/></div>
-            <div className="space-y-1"><label className="block text-sm font-bold text-gray-700">🇫🇷 {t('dash_content_fr')}</label><textarea rows={4} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-roBlue outline-none font-medium" value={editContentText.fr} onChange={(e) => setEditContentText({...editContentText, fr: e.target.value})}/></div>
-          </div>
-          <button onClick={handleSaveContent} className="w-full bg-green-600 text-white py-4 rounded-lg hover:bg-green-700 shadow-lg font-bold text-lg flex items-center justify-center gap-2"><span>💾</span> {t('dash_content_save')}</button>
+     <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-md border border-gray-100 p-6 md:p-8 animate-fade-in-up">
+        <h3 className="font-bold text-xl mb-6 text-slate-800 border-b pb-4">{t('dash_content_title')}</h3>
+        
+        <div className="mb-6">
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">{t('dash_content_select')}</label>
+            <select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-lg font-bold" value={selectedContentId} onChange={e => handleContentSelect(e.target.value)}>
+                {pageContents.map(c => (
+                    <option key={c.id} value={c.id}>{c.description}</option>
+                ))}
+            </select>
         </div>
-      </div>
-    </div>
+        
+        <div className="space-y-6">
+             {['en', 'ro', 'fr'].map(lang => (
+                 <div key={lang}>
+                     <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xl">{lang === 'en' ? '🇬🇧' : lang === 'ro' ? '🇷🇴' : '🇫🇷'}</span>
+                        <label className="text-xs font-bold text-gray-500 uppercase">
+                            {lang === 'en' ? t('dash_content_en') : lang === 'ro' ? t('dash_content_ro') : t('dash_content_fr')}
+                        </label>
+                     </div>
+                     <textarea 
+                        className="w-full p-4 bg-gray-50 border border-gray-200 rounded-lg text-sm leading-relaxed h-32 focus:ring-2 focus:ring-roBlue outline-none" 
+                        value={editContentText[lang as 'en'|'ro'|'fr']}
+                        onChange={e => setEditContentText({...editContentText, [lang]: e.target.value})}
+                     />
+                 </div>
+             ))}
+             <button onClick={handleSaveContent} className="w-full py-4 bg-roBlue text-white rounded-xl font-bold hover:bg-blue-900 shadow-lg transition-transform active:scale-[0.99]">{t('dash_content_save')}</button>
+        </div>
+     </div>
   );
 
   const renderAdminResources = () => (
-      <div className="space-y-8 animate-fade-in-up pb-10">
-          <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
-              <h3 className="font-bold mb-4 text-lg flex items-center gap-2"><span>📚</span> {t('dash_res_add')}</h3>
-              <form onSubmit={handleAddResource} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-1">
-                      <label className="block text-sm font-bold text-gray-700">{t('dash_res_title_label')}</label>
-                      <input type="text" className="w-full p-3 border rounded-lg" value={newResource.title || ''} onChange={e => setNewResource({...newResource, title: e.target.value})} required />
-                  </div>
-                  <div className="space-y-1">
-                      <label className="block text-sm font-bold text-gray-700">{t('dash_res_cat_label')}</label>
-                      <select className="w-full p-3 border rounded-lg bg-white" value={newResource.category} onChange={e => setNewResource({...newResource, category: e.target.value as any})}>
-                          <option value="music">{t('dash_res_cat_music')}</option>
-                          <option value="choreography">{t('dash_res_cat_choreo')}</option>
-                          <option value="costume">{t('dash_res_cat_costume')}</option>
-                          <option value="document">{t('dash_res_cat_doc')}</option>
-                      </select>
-                  </div>
-                  <div className="md:col-span-2 space-y-1">
-                      <label className="block text-sm font-bold text-gray-700">{t('dash_res_desc_label')}</label>
-                      <textarea className="w-full p-3 border rounded-lg h-24" value={newResource.description || ''} onChange={e => setNewResource({...newResource, description: e.target.value})} />
-                  </div>
-                  
-                  {/* File Upload Toggle */}
-                  <div className="md:col-span-2 space-y-2">
-                    <label className="block text-sm font-bold text-gray-700">{t('dash_res_input_type')}</label>
-                    <div className="flex gap-2">
-                         <button type="button" onClick={() => setResourceInputType('url')} className={`px-4 py-2 rounded-lg text-sm font-bold ${resourceInputType === 'url' ? 'bg-roBlue text-white' : 'bg-gray-100'}`}>{t('dash_res_type_url')}</button>
-                         <button type="button" onClick={() => setResourceInputType('file')} className={`px-4 py-2 rounded-lg text-sm font-bold ${resourceInputType === 'file' ? 'bg-roBlue text-white' : 'bg-gray-100'}`}>{t('dash_res_type_file')}</button>
-                    </div>
-                  </div>
-
-                  <div className="md:col-span-2 space-y-1">
-                      {resourceInputType === 'url' ? (
-                          <>
-                            <label className="block text-sm font-bold text-gray-700">{t('dash_res_url_label')}</label>
-                            <input type="text" placeholder="https://..." className="w-full p-3 border rounded-lg" value={newResource.url || ''} onChange={e => setNewResource({...newResource, url: e.target.value})} />
-                          </>
-                      ) : (
-                          <>
-                             <label className="block text-sm font-bold text-gray-700">{t('dash_res_file_label')}</label>
-                             <input type="file" accept="audio/*,video/*,application/pdf" className="w-full p-3 border border-gray-300 rounded-lg" onChange={handleResourceFileChange} />
-                             {newResource.url && newResource.url.startsWith('data:') && <p className="text-xs text-green-600 mt-1">✓ File ready to upload</p>}
-                          </>
-                      )}
-                  </div>
-
-                  <button type="submit" className="md:col-span-2 bg-roBlue text-white py-3 rounded-lg font-bold hover:bg-blue-900">{t('dash_res_add')}</button>
-              </form>
-          </div>
-          
-          <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
-              <h3 className="p-4 font-bold border-b bg-gray-50">{t('dash_res_list_title')}</h3>
-              <div className="divide-y divide-gray-100">
-                  {resources.map(res => (
-                      <div key={res.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
-                          <div>
-                              <h4 className="font-bold text-slate-800">{res.title}</h4>
-                              <p className="text-sm text-gray-500 mb-1">{res.description}</p>
-                              {res.url.startsWith('http') && !res.url.includes('firebase') && <a href={res.url} target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline">{res.url}</a>}
-                              {res.category === 'music' && (
-                                <audio controls className="h-8 mt-2 max-w-full"><source src={res.url} /></audio>
-                              )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold uppercase bg-gray-200 px-2 py-1 rounded text-gray-600">{res.category}</span>
-                              <button onClick={() => requestDeleteResource(res)} className="text-red-500 hover:bg-red-50 p-2 rounded">🗑️</button>
-                          </div>
-                      </div>
-                  ))}
-                  {resources.length === 0 && <p className="p-4 text-center text-gray-500 italic">{t('dash_res_empty')}</p>}
-              </div>
-          </div>
-      </div>
-  );
-
-  const renderMemberSchedule = () => (
-      <div className="space-y-6 animate-fade-in-up pb-10">
-        <div className="bg-white p-6 rounded-xl shadow-md border-l-4 border-roBlue">
-          <h3 className="text-xl font-bold mb-4">{t('dash_profile_settings')}</h3>
-          <div className="flex flex-col md:flex-row gap-4 items-end">
-             <div className="flex-1 w-full"><label className="block text-sm font-bold text-gray-700 mb-1">{t('dash_mobile_num')}</label><input type="tel" placeholder="+1 (555) 000-0000" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-roBlue outline-none" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)}/></div>
-             <button onClick={handleSaveProfile} className="bg-roBlue text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-900 transition-colors w-full md:w-auto">{t('dash_save_settings')}</button>
-          </div>
-          <p className="text-xs text-gray-500 mt-2">{t('dash_mobile_hint')}</p>
-        </div>
-        <h2 className="text-2xl font-bold border-b pb-4">{t('dash_tab_schedule')}</h2>
-        {events.filter(e => e.attendees.includes(user.id)).length === 0 ? (
-          <div className="bg-white p-12 rounded-xl shadow-sm text-center border border-dashed border-gray-300">
-             <div className="text-4xl mb-4">📅</div>
-             <p className="text-gray-500 text-lg mb-4">{t('dash_no_rsvp')}</p>
-             <button onClick={onClose} className="bg-roBlue text-white px-6 py-2 rounded-full font-bold hover:shadow-lg transition-all">{t('dash_browse_events')}</button>
-          </div>
-        ) : (
-          events.filter(e => e.attendees.includes(user.id)).map(ev => (
-            <div key={ev.id} className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-roBlue flex flex-col sm:flex-row justify-between items-start sm:items-center group hover:shadow-md transition-all gap-4">
-              <div><h4 className="font-bold text-xl group-hover:text-roBlue transition-colors">{ev.title}</h4><p className="text-gray-600 mt-2 flex flex-wrap items-center gap-4 text-sm"><span className="flex items-center gap-1">📅 {ev.date}</span><span className="flex items-center gap-1">⏰ {ev.time} EST</span><span className="flex items-center gap-1">📍 {ev.location}</span></p></div>
-              <div className="text-right w-full sm:w-auto mt-2 sm:mt-0"><span className="bg-green-100 text-green-800 text-xs font-bold px-3 py-1 rounded-full border border-green-200 inline-block">✓ {t('dash_status_approved')}</span></div>
-            </div>
-          ))
-        )}
-      </div>
-  );
-  
-  const renderMemberCommunity = () => (
-      <div className="space-y-6 animate-fade-in-up pb-10">
-          <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
-             <h2 className="text-2xl font-bold mb-4">{t('dash_test_add')}</h2>
-             <p className="text-gray-600 mb-6">{t('dash_test_add_desc')}</p>
-             <form onSubmit={handleSubmitStory} className="space-y-4">
-                 <div><label className="block text-sm font-bold text-gray-700 mb-2">Your Story</label><textarea className="w-full p-4 border rounded-xl h-40 focus:ring-2 focus:ring-roBlue outline-none" placeholder="Share your favorite memory..." value={memberStory} onChange={e => setMemberStory(e.target.value)} required /></div>
-                 <button type="submit" className="bg-roBlue text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-900 transition-colors shadow-lg">Submit for Review</button>
+     <div className="space-y-8 animate-fade-in-up pb-10">
+        <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
+             <h3 className="font-bold text-lg mb-4 text-slate-800">{t('dash_res_add')}</h3>
+             <form onSubmit={handleAddResource} className="grid md:grid-cols-2 gap-6">
+                 <div className="space-y-4">
+                     <div>
+                         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{t('dash_res_title_label')}</label>
+                         <input className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg" value={newResource.title || ''} onChange={e => setNewResource({...newResource, title: e.target.value})} required />
+                     </div>
+                     <div>
+                         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{t('dash_res_desc_label')}</label>
+                         <input className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg" value={newResource.description || ''} onChange={e => setNewResource({...newResource, description: e.target.value})} />
+                     </div>
+                     <div>
+                         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{t('dash_res_cat_label')}</label>
+                         <select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg" value={newResource.category} onChange={(e: any) => setNewResource({...newResource, category: e.target.value})}>
+                             <option value="music">{t('dash_res_cat_music')}</option>
+                             <option value="choreography">{t('dash_res_cat_choreo')}</option>
+                             <option value="costume">{t('dash_res_cat_costume')}</option>
+                             <option value="document">{t('dash_res_cat_doc')}</option>
+                         </select>
+                     </div>
+                 </div>
+                 <div className="space-y-4">
+                     <div>
+                         <label className="block text-xs font-bold text-gray-500 uppercase mb-2">{t('dash_res_input_type')}</label>
+                         <div className="flex gap-4">
+                             <label className="flex items-center gap-2 cursor-pointer">
+                                 <input type="radio" checked={resourceInputType === 'url'} onChange={() => setResourceInputType('url')} />
+                                 <span className="text-sm font-bold">{t('dash_res_type_url')}</span>
+                             </label>
+                             <label className="flex items-center gap-2 cursor-pointer">
+                                 <input type="radio" checked={resourceInputType === 'file'} onChange={() => setResourceInputType('file')} />
+                                 <span className="text-sm font-bold">{t('dash_res_type_file')}</span>
+                             </label>
+                         </div>
+                     </div>
+                     
+                     {resourceInputType === 'url' ? (
+                         <div>
+                             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{t('dash_res_url_label')}</label>
+                             <input className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg" value={newResource.url || ''} onChange={e => setNewResource({...newResource, url: e.target.value})} placeholder="https://..." />
+                         </div>
+                     ) : (
+                         <div>
+                             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{t('dash_res_file_label')}</label>
+                             <input type="file" className="w-full p-2 border border-gray-200 rounded-lg" onChange={handleResourceFileChange} />
+                         </div>
+                     )}
+                     
+                     <button type="submit" className="w-full py-3 bg-roBlue text-white rounded-lg font-bold hover:bg-blue-900 shadow-md mt-4">
+                         {t('dash_save')}
+                     </button>
+                 </div>
              </form>
-          </div>
-          <div className="mt-8">
-             <h3 className="font-bold text-lg mb-4 text-gray-500">{t('dash_my_submissions')}</h3>
-             <div className="space-y-4">
-                {allTestimonials.filter(t => t.author === user.name).map(t => (
-                    <div key={t.id} className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex justify-between items-center"><p className="text-gray-600 truncate flex-1 pr-4">"{t.text}"</p><span className={`text-xs font-bold px-2 py-1 rounded ${t.approved ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{t.approved ? 'Live' : 'Pending'}</span></div>
-                ))}
-                {allTestimonials.filter(t => t.author === user.name).length === 0 && <p className="text-gray-400 italic">{t('dash_no_submissions')}</p>}
+        </div>
+        
+        <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
+             <div className="p-4 border-b border-gray-100 bg-gray-50"><h3 className="font-bold text-slate-800">{t('dash_res_list_title')}</h3></div>
+             <div className="divide-y divide-gray-100">
+                 {resources.length === 0 && <p className="p-6 text-center text-gray-400">{t('dash_res_empty')}</p>}
+                 {resources.map(r => (
+                     <div key={r.id} className="p-4 flex justify-between items-center hover:bg-gray-50">
+                         <div className="flex items-center gap-3">
+                             <span className="text-2xl">{r.category === 'music' ? '🎵' : r.category === 'choreography' ? '💃' : r.category === 'costume' ? '👘' : '📄'}</span>
+                             <div>
+                                 <h4 className="font-bold text-slate-800"><a href={r.url} target="_blank" rel="noreferrer" className="hover:text-roBlue hover:underline">{r.title}</a></h4>
+                                 <p className="text-xs text-gray-500">{r.description} • {new Date(r.dateAdded).toLocaleDateString()}</p>
+                             </div>
+                         </div>
+                         <button onClick={() => requestDeleteResource(r)} className="text-red-400 hover:text-red-600 font-bold text-sm px-3 py-1 rounded hover:bg-red-50">{t('dash_delete')}</button>
+                     </div>
+                 ))}
              </div>
-          </div>
+        </div>
+     </div>
+  );
+
+  const renderMemberCommunity = () => (
+      <div className="space-y-8 animate-fade-in-up pb-10">
+         <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
+             <h3 className="font-bold text-xl mb-4 text-roBlue">{t('dash_test_add')}</h3>
+             <p className="text-gray-600 mb-6">{t('dash_test_add_desc')}</p>
+             <form onSubmit={handleSubmitStory}>
+                 <textarea 
+                    className="w-full p-4 bg-gray-50 border border-gray-200 rounded-lg mb-4 h-32 focus:ring-2 focus:ring-roBlue outline-none" 
+                    placeholder="Write your story here..."
+                    value={memberStory}
+                    onChange={e => setMemberStory(e.target.value)}
+                    required
+                 ></textarea>
+                 <button type="submit" className="bg-roBlue text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-900 shadow-md transition-transform active:scale-95">{t('contact_btn_send')}</button>
+             </form>
+         </div>
+         
+         <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
+             <h3 className="font-bold text-lg mb-4 text-slate-800">{t('dash_my_submissions')}</h3>
+             {allTestimonials.filter(t => t.author === user.name).length === 0 ? (
+                 <p className="text-gray-400">{t('dash_no_submissions')}</p>
+             ) : (
+                 <div className="space-y-4">
+                     {allTestimonials.filter(t => t.author === user.name).map(t => (
+                         <div key={t.id} className="p-4 bg-gray-50 rounded-lg border border-gray-100">
+                             <p className="italic text-gray-600 mb-2">"{t.text}"</p>
+                             <div className="flex items-center gap-2">
+                                 <span className={`text-xs font-bold px-2 py-1 rounded-full ${t.approved ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                     {t.approved ? t('dash_status_approved') : t('dash_status_pending')}
+                                 </span>
+                                 <span className="text-xs text-gray-400">{new Date().toLocaleDateString()}</span>
+                             </div>
+                         </div>
+                     ))}
+                 </div>
+             )}
+         </div>
       </div>
   );
 
   const renderMemberResources = () => (
-      <div className="space-y-6 animate-fade-in-up pb-10">
-          <h2 className="text-2xl font-bold border-b pb-4">{t('dash_tab_resources')}</h2>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {['music', 'choreography', 'costume', 'document'].map(cat => {
-                  const catResources = resources.filter(r => r.category === cat);
-                  if (catResources.length === 0) return null;
-                  
-                  let icon = '📁';
-                  let titleKey = 'dash_res_cat_doc';
-                  if (cat === 'music') { icon = '🎵'; titleKey = 'dash_res_cat_music'; }
-                  if (cat === 'choreography') { icon = '💃'; titleKey = 'dash_res_cat_choreo'; }
-                  if (cat === 'costume') { icon = '👗'; titleKey = 'dash_res_cat_costume'; }
-                  
-                  return (
-                      <div key={cat} className="bg-white p-6 rounded-xl shadow-md border-t-4 border-roBlue">
-                          <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><span>{icon}</span> {t(titleKey)}</h3>
-                          <ul className="space-y-3">
-                              {catResources.map(res => {
-                                  // Determine if it's a data URL (file upload in demo mode)
-                                  const isDataUrl = res.url.startsWith('data:');
-                                  
-                                  return (
-                                  <li key={res.id} className="block p-3 rounded-lg bg-gray-50 border border-gray-100 hover:border-roBlue transition-all">
-                                      {/* Content Renderer Based on Category */}
-                                      {cat === 'music' ? (
-                                        <div>
-                                            <div className="font-bold text-roBlue mb-2">{res.title}</div>
-                                            <audio controls className="w-full h-8"><source src={res.url} /></audio>
-                                            <p className="text-xs text-gray-500 mt-1">{res.description}</p>
-                                        </div>
-                                      ) : cat === 'choreography' && (res.url.includes('youtube') || res.url.includes('vimeo')) ? (
-                                        <div>
-                                             <div className="font-bold text-roBlue mb-2">{res.title}</div>
-                                             <div className="aspect-video rounded overflow-hidden mb-2">
-                                                <iframe src={res.url.replace('watch?v=', 'embed/')} className="w-full h-full" allowFullScreen></iframe>
-                                             </div>
-                                             <p className="text-xs text-gray-500">{res.description}</p>
-                                        </div>
-                                      ) : cat === 'choreography' && !res.url.includes('http') ? ( 
-                                         // Assume Base64/File for non-http links in choreography
-                                         <div>
-                                            <div className="font-bold text-roBlue mb-2">{res.title}</div>
-                                            <video controls className="w-full rounded mb-2"><source src={res.url} /></video>
-                                            <p className="text-xs text-gray-500">{res.description}</p>
-                                         </div>
-                                      ) : (
-                                          <a 
-                                            href={res.url} 
-                                            target={isDataUrl ? undefined : "_blank"} 
-                                            rel="noreferrer" 
-                                            download={isDataUrl ? res.title : undefined} // Force download if data URL
-                                            className="block group"
-                                          >
-                                              <div className="font-bold text-roBlue group-hover:underline flex items-center gap-2">
-                                                {res.title}
-                                                {isDataUrl ? (
-                                                   <span className="text-xs font-normal text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">⬇ Download</span>
-                                                ) : (
-                                                   <span className="text-xs font-normal text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">↗ Opens in new tab</span>
-                                                )}
-                                              </div>
-                                              <div className="text-sm text-gray-500 mt-1">{res.description}</div>
-                                          </a>
-                                      )}
-                                  </li>
-                                  );
-                              })}
-                          </ul>
-                      </div>
-                  );
-              })}
-          </div>
-          {resources.length === 0 && <p className="text-center text-gray-500 py-10">{t('dash_res_empty')}</p>}
-      </div>
+    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in-up pb-10">
+        {resources.length === 0 && (
+            <div className="col-span-full text-center py-10 bg-white rounded-xl shadow-sm border border-gray-100">
+                <p className="text-gray-400 text-lg">Coming Soon...</p>
+            </div>
+        )}
+        {resources.map(r => (
+            <div key={r.id} className="bg-white p-6 rounded-xl shadow-md border border-gray-100 hover:shadow-lg transition-shadow group">
+                <div className="text-4xl mb-4 group-hover:scale-110 transition-transform origin-left">
+                    {r.category === 'music' ? '🎵' : r.category === 'choreography' ? '💃' : r.category === 'costume' ? '👘' : '📄'}
+                </div>
+                <h4 className="font-bold text-lg text-slate-800 mb-2">{r.title}</h4>
+                <p className="text-gray-600 text-sm mb-4 line-clamp-2">{r.description}</p>
+                <a 
+                   href={r.url} 
+                   target="_blank" 
+                   rel="noreferrer" 
+                   className="inline-block bg-gray-100 text-roBlue font-bold px-4 py-2 rounded-lg hover:bg-roBlue hover:text-white transition-colors"
+                >
+                    Access Resource →
+                </a>
+            </div>
+        ))}
+    </div>
   );
+
+  const renderMemberSchedule = () => {
+    const myEvents = localEvents.filter(e => e.attendees.includes(user.id));
+    return (
+      <div className="space-y-8 animate-fade-in-up pb-10">
+         {/* Profile Settings Card */}
+         <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100 flex flex-col lg:flex-row gap-8 items-start">
+             
+             {/* Left: Avatar Management */}
+             <div className="flex flex-col items-center gap-4 w-full lg:w-auto">
+                 <div className="relative group mx-auto">
+                     <Avatar src={displayAvatar} name={user.name} color={avatarColor} initials={customInitials} className="w-24 h-24 rounded-full text-3xl shadow-lg border-2 border-white" />
+                     <label className="absolute bottom-0 right-0 bg-roBlue text-white p-2 rounded-full cursor-pointer shadow-lg hover:bg-blue-700 transition-colors z-10" title={t('dash_avatar_change')}>
+                         <input type="file" accept="image/*" className="hidden" ref={avatarInputRef} onChange={handleAvatarChange} />
+                         <span className="text-xs">📷</span>
+                     </label>
+                 </div>
+                 
+                 {/* No-Image Customization */}
+                 <div className="w-full bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <p className="text-xs font-bold text-gray-500 mb-2 uppercase text-center">{t('dash_avatar_customize')}</p>
+                    
+                    <div className="mb-3">
+                       <label className="block text-[10px] text-gray-400 mb-1">{t('dash_avatar_bg')}</label>
+                       <div className="flex flex-wrap gap-2 justify-center">
+                          {AVATAR_COLORS.map(c => (
+                             <button 
+                               key={c}
+                               onClick={() => { setAvatarColor(c); setDisplayAvatar(''); }} // Clear image if color selected
+                               className={`w-6 h-6 rounded-full ${c} ${avatarColor === c ? 'ring-2 ring-offset-1 ring-slate-800' : 'hover:scale-110'} transition-all`}
+                             />
+                          ))}
+                       </div>
+                    </div>
+                    
+                    <div>
+                        <label className="block text-[10px] text-gray-400 mb-1">{t('dash_avatar_initials')}</label>
+                        <input 
+                           type="text" 
+                           maxLength={2} 
+                           placeholder={user.name.substring(0,2).toUpperCase()}
+                           className="w-full p-2 text-center text-sm font-bold border rounded uppercase bg-white"
+                           value={customInitials}
+                           onChange={e => { setCustomInitials(e.target.value.toUpperCase()); setDisplayAvatar(''); }}
+                        />
+                    </div>
+                 </div>
+             </div>
+
+             {/* Right: Personal Details */}
+             <div className="flex-1 w-full space-y-5">
+                 <h3 className="text-xl font-bold text-slate-800 border-b pb-2">{t('dash_profile_settings')}</h3>
+                 <div className="grid md:grid-cols-2 gap-4">
+                     <div>
+                         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{t('dash_mobile_num')}</label>
+                         <input type="tel" placeholder="+15550001234" className="w-full p-2 border rounded bg-gray-50" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} />
+                     </div>
+                     <div>
+                         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{t('dash_carrier_label')}</label>
+                         <select className="w-full p-2 border rounded bg-gray-50" value={carrier} onChange={e => setCarrier(e.target.value)}>
+                             <option value="">-- Select Carrier --</option>
+                             <option value="rogers">Rogers</option>
+                             <option value="bell">Bell</option>
+                             <option value="telus">Telus</option>
+                             <option value="fido">Fido</option>
+                             <option value="virgin">Virgin</option>
+                             <option value="koodo">Koodo</option>
+                             <option value="freedom">Freedom</option>
+                         </select>
+                     </div>
+                 </div>
+                 
+                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-2">
+                    <p className="text-xs text-gray-400 text-center sm:text-left">{t('dash_mobile_hint')}</p>
+                    <button onClick={handleSaveProfile} className="bg-roBlue text-white px-6 py-2.5 rounded-lg font-bold text-sm hover:bg-blue-900 shadow-md transition-all transform hover:-translate-y-0.5 w-full sm:w-auto">{t('dash_save_settings')}</button>
+                 </div>
+                 
+                 <div className="border-t border-gray-100 pt-4 text-center sm:text-left">
+                    <button onClick={handleEnableNotifications} className="text-xs text-roBlue hover:underline flex items-center gap-1 font-bold mx-auto sm:mx-0">🔔 Enable Browser Notifications</button>
+                 </div>
+             </div>
+         </div>
+
+         {/* My Schedule */}
+         <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
+             <div className="p-6 border-b border-gray-100 bg-roBlue/5"><h3 className="font-bold text-xl text-roBlue">📅 {t('dash_tab_schedule')}</h3></div>
+             {myEvents.length === 0 ? (
+                 <div className="p-10 text-center">
+                     <div className="text-6xl mb-4 text-gray-200">📆</div>
+                     <p className="text-gray-500 font-medium mb-4">{t('dash_no_rsvp')}</p>
+                     <button onClick={onClose} className="bg-roYellow text-roBlue px-6 py-2 rounded-full font-bold shadow-md hover:shadow-lg">{t('dash_browse_events')}</button>
+                 </div>
+             ) : (
+                 <div className="divide-y divide-gray-100">
+                     {myEvents.map(ev => (
+                         <div key={ev.id} className="p-4 md:p-6 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                             <div className="flex items-center gap-4">
+                                 <div className="text-center bg-gray-100 rounded-lg p-2 min-w-[60px]">
+                                     <div className="text-xs font-bold text-red-500 uppercase">{new Date(ev.date).toLocaleString('default', { month: 'short' })}</div>
+                                     <div className="text-xl font-bold text-slate-800">{new Date(ev.date).getDate()}</div>
+                                 </div>
+                                 <div>
+                                     <h4 className="font-bold text-lg text-slate-800">{ev.title}</h4>
+                                     <p className="text-sm text-gray-500">📍 {ev.location} • ⏰ {ev.time}</p>
+                                 </div>
+                             </div>
+                             <div className="text-green-600 font-bold bg-green-50 px-3 py-1 rounded-full text-xs">Going</div>
+                         </div>
+                     ))}
+                 </div>
+             )}
+         </div>
+      </div>
+    );
+  };
 
   return (
     <div className="fixed inset-0 z-[60] bg-slate-50 font-sans flex h-screen overflow-hidden">

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { useTranslation } from '../services/translations';
 import LanguageSwitcher from './LanguageSwitcher';
+import Avatar from './Avatar';
 
 interface NavbarProps {
   user: User | null;
@@ -79,7 +80,13 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLoginClick, onLogoutClick, onDa
                   onClick={onDashboardClick}
                   className="text-white hover:text-roYellow font-medium flex items-center gap-2 group"
                 >
-                  <img src={user.avatar} alt="Profile" className="w-8 h-8 rounded-full border-2 border-roYellow object-cover group-hover:scale-105 transition-transform" />
+                  <Avatar 
+                    src={user.avatar} 
+                    name={user.name}
+                    color={user.avatarColor}
+                    initials={user.customInitials}
+                    className="w-8 h-8 rounded-full border-2 border-roYellow group-hover:scale-105 transition-transform text-xs" 
+                  />
                   <span className="max-w-[100px] truncate">{user.name}</span>
                 </button>
                 <button 
@@ -142,7 +149,13 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLoginClick, onLogoutClick, onDa
             {user ? (
                <div className="bg-white/10 p-5 rounded-2xl space-y-4 shadow-inner">
                  <div className="flex items-center gap-3">
-                    <img src={user.avatar} alt="Profile" className="w-12 h-12 rounded-full border-2 border-white object-cover" />
+                    <Avatar 
+                      src={user.avatar} 
+                      name={user.name} 
+                      color={user.avatarColor}
+                      initials={user.customInitials}
+                      className="w-12 h-12 rounded-full border-2 border-white text-base" 
+                    />
                     <div className="overflow-hidden">
                       <p className="text-white font-bold text-lg truncate">{user.name}</p>
                       <p className="text-white/60 text-sm truncate">{user.email}</p>
@@ -170,4 +183,3 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLoginClick, onLogoutClick, onDa
 };
 
 export default Navbar;
-    

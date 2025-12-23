@@ -13,7 +13,7 @@ import Dashboard from './components/Dashboard';
 import Testimonials from './components/Testimonials';
 import EventDetails from './components/EventDetails';
 import { User, Event, GalleryItem, Testimonial } from './types';
-import { getEvents, getGallery, rsvpEvent, getTestimonials } from './services/mockService';
+import { getEvents, getGallery, rsvpEvent, getTestimonials, subscribeToAuthChanges, getUserProfile } from './services/mockService';
 import { LanguageProvider } from './services/translations';
 
 type ViewState = 'landing' | 'archive' | 'event-details';
@@ -38,7 +38,24 @@ function App() {
     setTestimonials(t);
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { 
+    fetchData();
+    
+    // Subscribe to auth state changes for persistence
+    const unsubscribe = subscribeToAuthChanges((u) => {
+      setUser(u);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleUpdateData = async () => {
+    await fetchData();
+    // Also refresh the user profile to get latest avatar changes
+    if (user) {
+        const updatedUser = await getUserProfile(user.id);
+        if (updatedUser) setUser(updatedUser);
+    }
+  };
 
   const handleLogin = (loggedInUser: User) => {
     setUser(loggedInUser);
@@ -46,6 +63,9 @@ function App() {
   };
 
   const handleLogout = () => {
+    import('./services/firebase').then(({ auth }) => {
+      if (auth) auth.signOut();
+    });
     setUser(null);
     setIsDashboardOpen(false);
   };
@@ -153,7 +173,7 @@ function App() {
             user={user} 
             events={events}
             gallery={gallery}
-            onUpdateData={fetchData}
+            onUpdateData={handleUpdateData}
             onClose={() => setIsDashboardOpen(false)}
           />
         )}

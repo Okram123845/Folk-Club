@@ -8,7 +8,10 @@ export interface User {
   email: string;
   role: UserRole;
   avatar?: string;
-  phoneNumber?: string; // Added for SMS notifications
+  avatarColor?: string; // Custom background color
+  customInitials?: string; // Custom letters
+  phoneNumber?: string;
+  carrier?: string;
 }
 
 export interface Event {
@@ -32,8 +35,8 @@ export interface GalleryItem {
   dateAdded: string;
   type?: 'image' | 'video'; 
   eventId?: string; 
-  approved: boolean; // New field for moderation
-  uploadedBy?: string; // New field to track contributor
+  approved: boolean; 
+  uploadedBy?: string; 
 }
 
 export interface Testimonial {

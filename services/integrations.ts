@@ -13,21 +13,55 @@ const EMAILJS_CONFIG = {
 };
 
 // ------------------------------------------------------------------
-// 2. SMS CONFIGURATION (Get these from https://www.twilio.com/)
+// 2. FREE SMS GATEWAYS (Canadian Carriers)
+// Instead of paying for SMS, we email the carrier's gateway.
 // ------------------------------------------------------------------
-const TWILIO_CONFIG = {
-  ACCOUNT_SID: 'YOUR_TWILIO_SID',     // e.g. "ACb...123"
-  AUTH_TOKEN: 'YOUR_TWILIO_TOKEN',    // e.g. "382...abc"
-  FROM_NUMBER: 'YOUR_TWILIO_NUMBER'   // e.g. "+15551234567"
+const CARRIER_GATEWAYS: { [key: string]: string } = {
+  'rogers': 'pcs.rogers.com',
+  'bell': 'txt.bell.ca',
+  'telus': 'msg.telus.com',
+  'fido': 'fido.ca',
+  'virgin': 'vmobile.ca',
+  'koodo': 'msg.koodomobile.com',
+  'freedom': 'txt.freedommobile.ca',
+  'chatr': 'pcs.chatrwireless.com'
+};
+
+// --- BROWSER NOTIFICATIONS (Free SMS Alternative) ---
+export const requestNotificationPermission = async () => {
+  if (!('Notification' in window)) return false;
+  
+  if (Notification.permission === 'granted') return true;
+  
+  const permission = await Notification.requestPermission();
+  return permission === 'granted';
+};
+
+export const sendLocalNotification = (title: string, body: string) => {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+  try {
+    // Mobile devices often require a service worker for "push", 
+    // but the Notification API works for local alerts while the app is open/backgrounded in many browsers.
+    new Notification(title, {
+      body: body,
+      icon: '/vite.svg', // Default icon
+      badge: '/vite.svg',
+      vibrate: [200, 100, 200]
+    } as any);
+  } catch (e) {
+    console.error("Notification Error:", e);
+  }
 };
 
 // --- EMAIL LOGIC ---
-export const sendRealEmail = async (data: { name: string; email: string; message: string }) => {
+export const sendRealEmail = async (data: { name: string; email: string; message: string }, toEmail?: string) => {
   if (EMAILJS_CONFIG.PUBLIC_KEY === 'YOUR_PUBLIC_KEY') {
     console.warn('⚠️ EMAIL NOT SENT: Missing EmailJS Keys in services/integrations.ts');
     return;
   }
 
+  // If 'toEmail' is provided, we override who it goes to (e.g., sending to SMS gateway)
   const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -36,6 +70,7 @@ export const sendRealEmail = async (data: { name: string; email: string; message
       template_id: EMAILJS_CONFIG.TEMPLATE_ID,
       user_id: EMAILJS_CONFIG.PUBLIC_KEY,
       template_params: {
+        to_email: toEmail || data.email, // Use this variable in EmailJS template
         from_name: data.name,
         reply_to: data.email,
         message: data.message,
@@ -51,74 +86,65 @@ export const sendRealEmail = async (data: { name: string; email: string; message
   return response;
 };
 
-// --- SMS LOGIC ---
-const sendRealSms = async (to: string, body: string) => {
-  if (TWILIO_CONFIG.ACCOUNT_SID === 'YOUR_TWILIO_SID') {
-    console.warn('⚠️ SMS NOT SENT: Missing Twilio Keys in services/integrations.ts');
-    return;
-  }
-
-  // Basic validation
-  if (!to || to.length < 10) return;
-
-  const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_CONFIG.ACCOUNT_SID}/Messages.json`;
-  const auth = btoa(`${TWILIO_CONFIG.ACCOUNT_SID}:${TWILIO_CONFIG.AUTH_TOKEN}`);
-  
-  const formData = new URLSearchParams();
-  formData.append('To', to);
-  formData.append('From', TWILIO_CONFIG.FROM_NUMBER);
-  formData.append('Body', body);
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: formData
-    });
-    
-    if (!response.ok) {
-       console.error("Twilio SMS Failed:", await response.text());
-    }
-  } catch (e) {
-    console.error("SMS Network Error:", e);
-  }
-};
-
 // --- COMBINED NOTIFICATION ---
 export const sendRSVPConfirmation = async (
-  user: { name: string; email: string; phone?: string }, 
+  user: { name: string; email: string; phone?: string; carrier?: string }, 
   event: { title: string; date: string; time: string; location: string }
 ) => {
   console.log(`[NOTIFICATION] Sending RSVP confirmation to ${user.name}`);
 
-  // 1. Send Email via EmailJS
-  if (EMAILJS_CONFIG.PUBLIC_KEY !== 'YOUR_PUBLIC_KEY') {
-    await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        service_id: EMAILJS_CONFIG.SERVICE_ID,
-        template_id: EMAILJS_CONFIG.RSVP_TEMPLATE_ID,
-        user_id: EMAILJS_CONFIG.PUBLIC_KEY,
-        template_params: {
-          to_name: user.name,
-          to_email: user.email,
-          event_name: event.title,
-          event_date: event.date,
-          event_time: event.time,
-          event_location: event.location
-        },
-      }),
-    });
-  }
+  // 1. Send Browser Notification (Instant, Free, No Setup)
+  sendLocalNotification(
+    "RSVP Confirmed! ✅", 
+    `You are going to ${event.title} on ${event.date}. See you there!`
+  );
 
-  // 2. Send SMS via Twilio (if phone exists)
-  if (user.phone && TWILIO_CONFIG.ACCOUNT_SID !== 'YOUR_TWILIO_SID') {
-      const message = `Confirmation: You are booked for ${event.title} on ${event.date} at ${event.time}. Location: ${event.location}. - RK Folk Club`;
-      await sendRealSms(user.phone, message);
+  if (EMAILJS_CONFIG.PUBLIC_KEY === 'YOUR_PUBLIC_KEY') return;
+
+  // 2. Send Email via EmailJS (Standard Email)
+  await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      service_id: EMAILJS_CONFIG.SERVICE_ID,
+      template_id: EMAILJS_CONFIG.RSVP_TEMPLATE_ID,
+      user_id: EMAILJS_CONFIG.PUBLIC_KEY,
+      template_params: {
+        to_email: user.email,
+        to_name: user.name,
+        event_name: event.title,
+        event_date: event.date,
+        event_time: event.time,
+        event_location: event.location
+      },
+    }),
+  }).catch(e => console.error("Email Failed", e));
+
+  // 3. Send SMS via FREE Email Gateway (If carrier is selected)
+  if (user.phone && user.carrier && CARRIER_GATEWAYS[user.carrier]) {
+      // Format number: remove dashes/spaces
+      const cleanNumber = user.phone.replace(/\D/g, '');
+      if (cleanNumber.length >= 10) {
+          const smsEmail = `${cleanNumber}@${CARRIER_GATEWAYS[user.carrier]}`;
+          const message = `RSVP Confirmed: ${event.title} on ${event.date} @ ${event.time}. - RK Folk Club`;
+          
+          // We reuse EmailJS to send this "text"
+          await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              service_id: EMAILJS_CONFIG.SERVICE_ID,
+              template_id: EMAILJS_CONFIG.TEMPLATE_ID, // Use a simple template for SMS
+              user_id: EMAILJS_CONFIG.PUBLIC_KEY,
+              template_params: {
+                to_email: smsEmail, // Sending to 1234567890@msg.telus.com
+                from_name: "RK Folk Club",
+                message: message
+              },
+            }),
+          }).then(() => console.log(`SMS sent to ${smsEmail}`))
+            .catch(e => console.error("SMS Gateway Failed", e));
+      }
   }
 };
 
@@ -142,9 +168,8 @@ export const fetchRealInstagramPosts = async () => {
 };
 
 // --- TRANSLATION SERVICE (FREE API) ---
-export const translateText = async (text: string, targetLang: string): Promise<string> => {
+export const translateText = async (text: string, targetLang: string, sourceLang: string = 'en'): Promise<string> => {
   if (!text) return '';
-  const sourceLang = 'en'; 
   const langPair = `${sourceLang}|${targetLang}`;
   
   try {
@@ -156,4 +181,94 @@ export const translateText = async (text: string, targetLang: string): Promise<s
   } catch (e) {
     return text;
   }
+};
+
+// --- CALENDAR INTEGRATION ---
+
+export const getGoogleCalendarUrl = (event: any, description: string) => {
+  const formatDate = (dateStr: string, timeStr: string) => {
+    if (!dateStr || !timeStr) return '';
+    return `${dateStr.replace(/-/g, '')}T${timeStr.replace(/:/g, '')}00`;
+  };
+
+  const startDateTime = formatDate(event.date, event.time);
+  let endDateTime = '';
+  
+  if (event.endTime) {
+      endDateTime = formatDate(event.date, event.endTime);
+  } else {
+      // Default duration: 2 hours
+      try {
+        const d = new Date(`${event.date}T${event.time}`);
+        d.setHours(d.getHours() + 2);
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const hours = String(d.getHours()).padStart(2, '0');
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        endDateTime = `${year}${month}${day}T${hours}${minutes}00`;
+      } catch (e) {
+        endDateTime = startDateTime; 
+      }
+  }
+
+  const details = encodeURIComponent(description || '');
+  const location = encodeURIComponent(event.location || '');
+  const text = encodeURIComponent(event.title || 'Event');
+  
+  // ctz=America/Toronto enforces EST/EDT
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${startDateTime}/${endDateTime}&details=${details}&location=${location}&ctz=America/Toronto`;
+};
+
+// Legacy ICS generator (can still be used if needed)
+export const generateEventICS = (event: any, description: string) => {
+  const formatDate = (dateStr: string, timeStr: string) => {
+    if (!dateStr || !timeStr) return '';
+    const cleanDate = dateStr.replace(/-/g, '');
+    const cleanTime = timeStr.replace(/:/g, '') + '00';
+    return `${cleanDate}T${cleanTime}`;
+  };
+
+  const startDateTime = formatDate(event.date, event.time);
+  let endDateTime = '';
+  if (event.endTime) {
+      endDateTime = formatDate(event.date, event.endTime);
+  } else {
+      try {
+        const d = new Date(`${event.date}T${event.time}`);
+        d.setHours(d.getHours() + 2);
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const hours = String(d.getHours()).padStart(2, '0');
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        endDateTime = `${year}${month}${day}T${hours}${minutes}00`;
+      } catch (e) {
+        endDateTime = startDateTime; 
+      }
+  }
+
+  const icsContent = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Romanian Kitchener Folk Club//Events//EN',
+    'BEGIN:VEVENT',
+    `UID:${Date.now()}@rkfolkclub.com`,
+    `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z`,
+    `DTSTART:${startDateTime}`,
+    `DTEND:${endDateTime}`,
+    `SUMMARY:${event.title}`,
+    `DESCRIPTION:${description ? description.replace(/\\n/g, '\\n') : ''}`,
+    `LOCATION:${event.location}`,
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ].join('\r\n');
+
+  const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+  const link = document.createElement('a');
+  link.href = window.URL.createObjectURL(blob);
+  link.setAttribute('download', `${event.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 };

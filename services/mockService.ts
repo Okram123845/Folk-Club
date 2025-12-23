@@ -4,7 +4,8 @@ import { auth, db, storage } from './firebase';
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
-  updateProfile 
+  updateProfile,
+  onAuthStateChanged
 } from 'firebase/auth';
 import { 
   collection, 
@@ -26,8 +27,8 @@ import { dictionary } from './translations';
 
 // --- MOCK DATA (Fallback for Demo Mode) ---
 const INITIAL_USERS: User[] = [
-  { id: 'admin1', name: 'Admin User', email: 'admin@folk.com', role: 'admin', avatar: 'https://ui-avatars.com/api/?name=Admin+User&background=C8102E&color=fff', phoneNumber: '+1234567890' },
-  { id: 'mem1', name: 'Maria Dan', email: 'member@folk.com', role: 'member', avatar: 'https://ui-avatars.com/api/?name=Maria+Dan&background=002B7F&color=fff' }
+  { id: 'admin1', name: 'Admin User', email: 'admin@folk.com', role: 'admin', avatar: '', phoneNumber: '+1234567890' },
+  { id: 'mem1', name: 'Maria Dan', email: 'member@folk.com', role: 'member', avatar: '' }
 ];
 
 const INITIAL_EVENTS: Event[] = [
@@ -118,9 +119,11 @@ export const loginUser = async (email: string, password: string): Promise<User> 
     const firebaseUser = userCredential.user;
     
     // Fetch custom user role from Firestore with a 2-second timeout
-    // If DB is slow, default to 'member' instantly so login doesn't hang
     let role: UserRole = 'member';
     let phoneNumber = '';
+    let carrier = '';
+    let avatarColor = '';
+    let customInitials = '';
     
     try {
         const docRef = doc(db!, "users", firebaseUser.uid);
@@ -135,10 +138,12 @@ export const loginUser = async (email: string, password: string): Promise<User> 
             const data = userDoc.data();
             role = data.role || 'member';
             phoneNumber = data.phoneNumber || '';
+            carrier = data.carrier || '';
+            avatarColor = data.avatarColor || '';
+            customInitials = data.customInitials || '';
         }
     } catch (e) {
         console.warn("DB Fetch slow/failed, defaulting to Member role for speed.", e);
-        // We default to 'member' so they can at least log in.
     }
 
     return {
@@ -146,8 +151,11 @@ export const loginUser = async (email: string, password: string): Promise<User> 
       name: firebaseUser.displayName || email.split('@')[0],
       email: firebaseUser.email || '',
       role: role,
-      avatar: firebaseUser.photoURL || `https://ui-avatars.com/api/?name=${email}&background=random`,
-      phoneNumber: phoneNumber
+      avatar: firebaseUser.photoURL || '',
+      phoneNumber,
+      carrier,
+      avatarColor,
+      customInitials
     };
   } else {
     // Local Fallback
@@ -161,19 +169,16 @@ export const loginUser = async (email: string, password: string): Promise<User> 
 
 export const registerUser = async (name: string, email: string, password: string): Promise<User> => {
   if (isFirebaseActive()) {
-    // 1. Create Auth User
     const userCredential = await createUserWithEmailAndPassword(auth!, email, password);
     
-    // Non-blocking profile update
     updateProfile(userCredential.user, { displayName: name }).catch(e => console.error("Profile update bg error", e));
     
-    // 2. Check if this is the FIRST user ever (Make them Admin)
     let role: UserRole = 'member';
     try {
         const q = query(collection(db!, "users"), limit(1));
         const snapshot = await getDocs(q);
         if (snapshot.empty) {
-            role = 'admin'; // First user becomes admin
+            role = 'admin'; 
         }
     } catch (e) {
         console.error("Error checking user count, defaulting to member", e);
@@ -184,12 +189,10 @@ export const registerUser = async (name: string, email: string, password: string
       name,
       email,
       role: role,
-      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
+      avatar: '',
       phoneNumber: ''
     };
 
-    // 3. Save User to DB (Creates the 'users' collection automatically)
-    // We return immediately for UI speed, but this must happen to create the collection
     setDoc(doc(db!, "users", newUser.id), {
       name, 
       email, 
@@ -200,11 +203,66 @@ export const registerUser = async (name: string, email: string, password: string
 
     return newUser;
   } else {
-    // Local Fallback
     const users = JSON.parse(localStorage.getItem('users') || JSON.stringify(INITIAL_USERS));
-    const newUser = { id: `u_${Date.now()}`, name, email, role: 'member', avatar: `https://ui-avatars.com/api/?name=${name}`, phoneNumber: '' };
+    const newUser = { id: `u_${Date.now()}`, name, email, role: 'member', avatar: '', phoneNumber: '' };
     localStorage.setItem('users', JSON.stringify([...users, newUser]));
     return newUser as User;
+  }
+};
+
+export const getUserProfile = async (userId: string): Promise<User | null> => {
+  if (isFirebaseActive()) {
+    try {
+      const docRef = doc(db!, "users", userId);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        return {
+          id: userId,
+          name: data.name || '',
+          email: data.email || '',
+          role: data.role || 'member',
+          avatar: data.avatar || '',
+          phoneNumber: data.phoneNumber,
+          carrier: data.carrier,
+          avatarColor: data.avatarColor,
+          customInitials: data.customInitials
+        } as User;
+      }
+    } catch (e) {
+      console.error("Error fetching user profile:", e);
+    }
+  } else {
+    const users = await getUsers();
+    return users.find(u => u.id === userId) || null;
+  }
+  return null;
+};
+
+export const subscribeToAuthChanges = (callback: (user: User | null) => void) => {
+  if (isFirebaseActive()) {
+    return onAuthStateChanged(auth!, async (firebaseUser) => {
+      if (firebaseUser) {
+        const profile = await getUserProfile(firebaseUser.uid);
+        if (profile) {
+            callback(profile);
+        } else {
+            // Fallback if profile doc not ready yet
+            callback({
+                id: firebaseUser.uid,
+                name: firebaseUser.displayName || '',
+                email: firebaseUser.email || '',
+                role: 'member',
+                avatar: firebaseUser.photoURL || ''
+            });
+        }
+      } else {
+        callback(null);
+      }
+    });
+  } else {
+    // Local storage persistence mock could go here if needed
+    return () => {};
   }
 };
 
@@ -237,6 +295,83 @@ export const updateUserProfile = async (userId: string, data: Partial<User>): Pr
   }
 };
 
+// Helper: Resize Image Client-Side
+const resizeImage = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 250; // Small size for avatar in Firestore
+        const MAX_HEIGHT = 250;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        // Compress to JPEG 0.7 quality
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      };
+    };
+    reader.onerror = error => reject(error);
+  });
+};
+
+export const updateUserAvatar = async (userId: string, file: File): Promise<string> => {
+  // Resize image first to ensure it's tiny (safe for Firestore if Storage fails/is unused)
+  const resizedBase64 = await resizeImage(file);
+
+  let imageUrl = '';
+
+  if (isFirebaseActive() && storage) {
+      // Try Storage first
+      try {
+        const storageRef = ref(storage, `avatars/${userId}_${Date.now()}`);
+        // Convert base64 back to blob for upload
+        const response = await fetch(resizedBase64);
+        const blob = await response.blob();
+        await uploadBytes(storageRef, blob);
+        imageUrl = await getDownloadURL(storageRef);
+      } catch (e) {
+        console.warn("Storage upload failed, using Base64 in Firestore", e);
+        imageUrl = resizedBase64;
+      }
+  } else {
+      // Fallback: Store Base64 directly in Firestore (now safe because it's resized)
+      imageUrl = resizedBase64;
+  }
+
+  // Update DB
+  if (isFirebaseActive()) {
+      await updateDoc(doc(db!, "users", userId), { avatar: imageUrl });
+      if (auth && auth.currentUser && auth.currentUser.uid === userId) {
+          updateProfile(auth.currentUser, { photoURL: imageUrl }).catch(e => console.error(e));
+      }
+  } else {
+      const users = await getUsers();
+      const updated = users.map(u => u.id === userId ? { ...u, avatar: imageUrl } : u);
+      localStorage.setItem('users', JSON.stringify(updated));
+  }
+
+  return imageUrl;
+};
+
 // --- EVENTS SERVICE ---
 
 export const getEvents = async (): Promise<Event[]> => {
@@ -248,7 +383,7 @@ export const getEvents = async (): Promise<Event[]> => {
   }
 };
 
-// HELPER: Auto-translate description logic
+// HELPER: Auto-translate description logic with intelligent source detection
 const processEventDescription = async (description: string | { en: string; ro: string; fr: string }): Promise<{ en: string; ro: string; fr: string }> => {
   let descObj = { en: '', ro: '', fr: '' };
 
@@ -259,15 +394,20 @@ const processEventDescription = async (description: string | { en: string; ro: s
     descObj = { ...description };
   }
 
-  // 2. Identify Source Text (prefer English, then Romanian, then French)
-  const sourceText = descObj.en || descObj.ro || descObj.fr || '';
+  // 2. Identify Source Text & Language
+  let sourceText = '';
+  let sourceLang = 'en';
+
+  if (descObj.en) { sourceText = descObj.en; sourceLang = 'en'; }
+  else if (descObj.ro) { sourceText = descObj.ro; sourceLang = 'ro'; }
+  else if (descObj.fr) { sourceText = descObj.fr; sourceLang = 'fr'; }
 
   if (!sourceText) return descObj;
 
-  // 3. Fill missing translations
-  if (!descObj.en) descObj.en = await translateText(sourceText, 'en');
-  if (!descObj.ro) descObj.ro = await translateText(sourceText, 'ro');
-  if (!descObj.fr) descObj.fr = await translateText(sourceText, 'fr');
+  // 3. Fill missing translations from Source
+  if (!descObj.en) descObj.en = await translateText(sourceText, 'en', sourceLang);
+  if (!descObj.ro) descObj.ro = await translateText(sourceText, 'ro', sourceLang);
+  if (!descObj.fr) descObj.fr = await translateText(sourceText, 'fr', sourceLang);
 
   return descObj;
 };

@@ -24,7 +24,7 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { sendRealEmail, fetchRealInstagramPosts, sendRSVPConfirmation, translateText } from './integrations';
 
-// Helper to check if Firebase is Active (Always true now)
+// Helper to check if Firebase is Active
 export const isFirebaseActive = () => !!auth && !!db;
 
 // --- AUTH SERVICE ---
@@ -74,7 +74,7 @@ export const registerUser = async (name: string, email: string, password: string
   
   await updateProfile(userCredential.user, { displayName: name });
   
-  // First user registered is admin
+  // Check if this is the first user to make them admin
   let role: UserRole = 'member';
   try {
       const q = query(collection(db, "users"), limit(1));

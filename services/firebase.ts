@@ -1,12 +1,9 @@
 
-import { initializeApp, FirebaseApp } from 'firebase/app';
-import { getAuth, Auth } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
-import { getStorage, FirebaseStorage } from 'firebase/storage';
+import { initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
-// --------------------------------------------------------
-// Firebase Configuration
-// --------------------------------------------------------
 const firebaseConfig = {
   apiKey: "AIzaSyDD7UyXS23aYJ-vg-5rhlWBjbJ4vTF6v_s",
   authDomain: "kw-romanian-folk-club-37b02.firebaseapp.com",
@@ -16,15 +13,12 @@ const firebaseConfig = {
   appId: "1:160742434938:web:2c6d82a5bb4b351d8573c3"
 };
 
-// Initialize Firebase Core
-const app: FirebaseApp = initializeApp(firebaseConfig);
+// Initialize Firebase App
+const app = initializeApp(firebaseConfig);
 
-// Initialize and export services
-// This ensures that sub-modules like Auth register correctly with the initialized app
-const auth: Auth = getAuth(app);
-const db: Firestore = getFirestore(app);
-const storage: FirebaseStorage = getStorage(app);
+// Initialize Services
+export const auth = getAuth(app);
+export const db = getFirestore(app);
+export const storage = getStorage(app);
 
 console.log("🔥 Firebase initialized successfully");
-
-export { auth, db, storage };

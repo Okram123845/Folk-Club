@@ -1,20 +1,20 @@
 
 import React, { useState, useEffect } from 'react';
-import Navbar from './components/Navbar';
-import Hero from './components/Hero';
-import About from './components/About';
-import Events from './components/Events';
-import Archive from './components/Archive';
-import Gallery from './components/Gallery';
-import Contact from './components/Contact';
-import Footer from './components/Footer';
-import AuthModal from './components/AuthModal';
-import Dashboard from './components/Dashboard';
-import Testimonials from './components/Testimonials';
-import EventDetails from './components/EventDetails';
-import { User, Event, GalleryItem, Testimonial } from './types';
-import { getEvents, getGallery, rsvpEvent, getTestimonials, subscribeToAuthChanges, getUserProfile } from './services/mockService';
-import { LanguageProvider } from './services/translations';
+import Navbar from './components/Navbar.tsx';
+import Hero from './components/Hero.tsx';
+import About from './components/About.tsx';
+import Events from './components/Events.tsx';
+import Archive from './components/Archive.tsx';
+import Gallery from './components/Gallery.tsx';
+import Contact from './components/Contact.tsx';
+import Footer from './components/Footer.tsx';
+import AuthModal from './components/AuthModal.tsx';
+import Dashboard from './components/Dashboard.tsx';
+import Testimonials from './components/Testimonials.tsx';
+import EventDetails from './components/EventDetails.tsx';
+import { User, Event, GalleryItem, Testimonial } from './types.ts';
+import { getEvents, getGallery, rsvpEvent, getTestimonials, subscribeToAuthChanges, getUserProfile } from './services/mockService.ts';
+import { LanguageProvider } from './services/translations.ts';
 
 type ViewState = 'landing' | 'archive' | 'event-details';
 
@@ -30,12 +30,16 @@ function App() {
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
 
   const fetchData = async () => {
-    const e = await getEvents();
-    const g = await getGallery();
-    const t = await getTestimonials();
-    setEvents(e);
-    setGallery(g);
-    setTestimonials(t);
+    try {
+      const e = await getEvents();
+      const g = await getGallery();
+      const t = await getTestimonials();
+      setEvents(e);
+      setGallery(g);
+      setTestimonials(t);
+    } catch (err) {
+      console.error("Fetch Data Error:", err);
+    }
   };
 
   useEffect(() => { 
@@ -63,7 +67,7 @@ function App() {
   };
 
   const handleLogout = () => {
-    import('./services/firebase').then(({ auth }) => {
+    import('./services/firebase.ts').then(({ auth }) => {
       if (auth) auth.signOut();
     });
     setUser(null);

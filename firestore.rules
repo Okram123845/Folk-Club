@@ -1,0 +1,63 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is an admin
+    function isAdmin() {
+      return request.auth != null && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if (request.auth != null && request.auth.uid == userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Events
+    match /events/{eventId} {
+      allow read: if true;
+      allow write: if isAdmin();
+      // Allow members to update only the attendees array (for RSVP)
+      allow update: if request.auth != null && 
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['attendees']);
+    }
+
+    // Gallery items
+    match /gallery/{itemId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if isAdmin();
+    }
+
+    // Testimonials
+    match /testimonials/{itemId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isAdmin();
+    }
+
+    // Site content
+    match /content/{itemId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Contact messages
+    match /messages/{itemId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Resources
+    match /resources/{itemId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+  }
+}

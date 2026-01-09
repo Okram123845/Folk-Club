@@ -5,39 +5,26 @@ import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 
 // --------------------------------------------------------
-// PASTE YOUR FIREBASE KEYS HERE FROM STEP 1
+// Firebase Configuration
 // --------------------------------------------------------
 const firebaseConfig = {
-  apiKey: "AIzaSyC7QjJKCKmDSobxToDvzU7EAF2PY-thrpc",
-  authDomain: "kw-romanian-folk-club.firebaseapp.com",
-  projectId: "kw-romanian-folk-club",
-  storageBucket: "kw-romanian-folk-club.firebasestorage.app",
-  messagingSenderId: "1006030603730",
-  appId: "1:1006030603730:web:deaed80503617901c4340b"
+  apiKey: "AIzaSyDD7UyXS23aYJ-vg-5rhlWBjbJ4vTF6v_s",
+  authDomain: "kw-romanian-folk-club-37b02.firebaseapp.com",
+  projectId: "kw-romanian-folk-club-37b02",
+  storageBucket: "kw-romanian-folk-club-37b02.firebasestorage.app",
+  messagingSenderId: "160742434938",
+  appId: "1:160742434938:web:2c6d82a5bb4b351d8573c3"
 };
 
-// Initialize Firebase
-let app: FirebaseApp | undefined;
-let auth: Auth | undefined;
-let db: Firestore | undefined;
-let storage: FirebaseStorage | undefined;
+// Initialize Firebase Core
+const app: FirebaseApp = initializeApp(firebaseConfig);
 
-try {
-  // Check if apiKey is present and not a generic placeholder
-  if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY") {
-    app = initializeApp(firebaseConfig);
-    auth = getAuth(app);
-    
-    // Initialize Firestore using standard getFirestore for maximum speed (WebSockets)
-    db = getFirestore(app);
-    
-    storage = getStorage(app);
-    console.log("🔥 Firebase Connected Successfully");
-  } else {
-    console.warn("⚠️ Firebase keys not set. App running in LOCAL DEMO MODE.");
-  }
-} catch (error) {
-  console.error("Firebase Initialization Error:", error);
-}
+// Initialize and export services
+// This ensures that sub-modules like Auth register correctly with the initialized app
+const auth: Auth = getAuth(app);
+const db: Firestore = getFirestore(app);
+const storage: FirebaseStorage = getStorage(app);
+
+console.log("🔥 Firebase initialized successfully");
 
 export { auth, db, storage };

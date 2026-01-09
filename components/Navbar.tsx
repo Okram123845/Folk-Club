@@ -10,32 +10,41 @@ interface NavbarProps {
   onLoginClick: () => void;
   onLogoutClick: () => void;
   onDashboardClick: () => void;
-  onNavigate: (sectionId: string) => void; // New Prop for routing
+  onNavigate: (sectionId: string) => void;
 }
 
 const Navbar: React.FC<NavbarProps> = ({ user, onLoginClick, onLogoutClick, onDashboardClick, onNavigate }) => {
   const { t } = useTranslation();
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState('home');
 
   useEffect(() => {
-    const handleScroll = () => setIsScrolled(window.scrollY > 20);
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 40);
+      
+      // Update active section on scroll
+      const sections = ['home', 'about', 'events', 'gallery', 'contact'];
+      for (const section of sections.reverse()) {
+        const el = document.getElementById(section);
+        if (el && el.getBoundingClientRect().top < 200) {
+          setActiveSection(section);
+          break;
+        }
+      }
+    };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Lock body scroll when mobile menu is open
   useEffect(() => {
-    if (mobileMenuOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
+    document.body.style.overflow = mobileMenuOpen ? 'hidden' : 'unset';
     return () => { document.body.style.overflow = 'unset'; };
   }, [mobileMenuOpen]);
 
   const handleNavClick = (id: string) => {
     setMobileMenuOpen(false);
+    setActiveSection(id);
     onNavigate(id);
   };
 
@@ -48,28 +57,34 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLoginClick, onLogoutClick, onDa
   ];
 
   return (
-    <nav className={`fixed top-0 left-0 w-full z-50 transition-all duration-300 ${isScrolled || mobileMenuOpen ? 'bg-roBlue shadow-lg py-3' : 'bg-roBlue/90 md:bg-transparent py-4 md:py-6'}`}>
-      <div className="container mx-auto px-4 md:px-6 flex justify-between items-center relative z-50">
-        <a href="#" onClick={(e) => { e.preventDefault(); handleNavClick('home'); }} className="text-white font-serif font-bold text-xl md:text-2xl flex items-center gap-2 select-none relative z-50">
-          <span className="text-2xl md:text-3xl">🇷🇴</span>
-          <span className="hidden sm:inline">Romanian Kitchener Folk Club</span>
-          <span className="sm:hidden">RK Folk Club</span>
+    <nav className={`fixed top-0 left-0 w-full z-50 transition-all duration-500 ${isScrolled ? 'py-3' : 'py-6 md:py-8'}`}>
+      <div className={`container mx-auto px-6 flex justify-between items-center transition-all duration-500 rounded-3xl ${isScrolled ? 'glass shadow-2xl py-3 px-8 mx-auto max-w-7xl border border-white/20' : ''}`}>
+        <a href="#" onClick={(e) => { e.preventDefault(); handleNavClick('home'); }} className={`font-serif font-black text-2xl flex items-center gap-2 transition-colors duration-500 ${isScrolled ? 'text-roBlue' : 'text-white'}`}>
+          <span className="text-3xl filter drop-shadow-md">🇷🇴</span>
+          <span className="hidden sm:inline tracking-tight">KW Romanian Folk Club</span>
+          <span className="sm:hidden">KW Folk Club</span>
         </a>
 
         {/* Desktop Menu */}
-        <div className="hidden lg:flex items-center space-x-6">
+        <div className="hidden lg:flex items-center space-x-8">
           {navLinks.map(link => (
             <button 
               key={link.id}
               onClick={() => handleNavClick(link.id)}
-              className="text-white hover:text-roYellow font-medium transition-colors relative group text-sm xl:text-base py-2"
+              className={`font-bold transition-all relative group text-sm uppercase tracking-widest py-2 ${
+                isScrolled ? (activeSection === link.id ? 'text-roBlue' : 'text-slate-500 hover:text-roBlue') : (activeSection === link.id ? 'text-roYellow' : 'text-white hover:text-roYellow')
+              }`}
             >
               {link.name}
-              <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-roYellow transition-all group-hover:w-full"></span>
+              <span className={`absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full transition-all duration-300 ${
+                activeSection === link.id 
+                  ? 'bg-roRed opacity-100 scale-100 shadow-[0_0_8px_rgba(200,16,46,0.5)]' 
+                  : 'bg-transparent opacity-0 scale-0'
+              }`}></span>
             </button>
           ))}
           
-          <div className="h-6 w-px bg-white/20 mx-2"></div>
+          <div className={`h-6 w-px mx-2 transition-colors ${isScrolled ? 'bg-slate-200' : 'bg-white/20'}`}></div>
           
           <LanguageSwitcher />
 
@@ -78,28 +93,27 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLoginClick, onLogoutClick, onDa
               <div className="flex items-center gap-4">
                 <button 
                   onClick={onDashboardClick}
-                  className="text-white hover:text-roYellow font-medium flex items-center gap-2 group"
+                  className="flex items-center gap-3 group px-4 py-2 rounded-2xl hover:bg-roBlue/10 transition-all"
                 >
                   <Avatar 
                     src={user.avatar} 
                     name={user.name}
                     color={user.avatarColor}
                     initials={user.customInitials}
-                    className="w-8 h-8 rounded-full border-2 border-roYellow group-hover:scale-105 transition-transform text-xs" 
+                    className="w-10 h-10 rounded-full border-2 border-roYellow group-hover:scale-110 transition-transform shadow-lg" 
                   />
-                  <span className="max-w-[100px] truncate">{user.name}</span>
-                </button>
-                <button 
-                  onClick={onLogoutClick}
-                  className="text-sm text-white/80 hover:text-white underline"
-                >
-                  {t('nav_logout')}
+                  <div className="text-left hidden xl:block">
+                     <p className={`text-xs font-black leading-none ${isScrolled ? 'text-slate-800' : 'text-white'}`}>{user.name}</p>
+                     <p className="text-[10px] text-roYellow font-bold uppercase mt-0.5">Profile</p>
+                  </div>
                 </button>
               </div>
             ) : (
               <button 
                 onClick={onLoginClick}
-                className="bg-roYellow text-roBlue px-5 py-2 rounded-full font-bold text-sm hover:bg-white hover:shadow-lg transition-all transform hover:-translate-y-0.5 whitespace-nowrap shadow-md"
+                className={`px-8 py-3 rounded-2xl font-black text-sm transition-all transform hover:-translate-y-1 shadow-xl hover:shadow-roYellow/30 ${
+                  isScrolled ? 'bg-roBlue text-white hover:bg-slate-900' : 'bg-roYellow text-roBlue hover:bg-white'
+                }`}
               >
                 {t('nav_login')}
               </button>
@@ -110,68 +124,72 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLoginClick, onLogoutClick, onDa
         {/* Mobile Hamburger Button */}
         <div className="lg:hidden flex items-center z-50">
            <button 
-            className="text-white p-2 relative w-10 h-10 flex flex-col justify-center items-center gap-1.5 focus:outline-none"
+            className={`p-3 rounded-2xl transition-all active:scale-90 ${isScrolled ? 'bg-roBlue text-white' : 'bg-white/10 text-white'}`}
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
-            aria-expanded={mobileMenuOpen}
           >
-             <span className={`block w-6 h-0.5 bg-white transition-all duration-300 rounded-full ${mobileMenuOpen ? 'rotate-45 translate-y-2' : ''}`}></span>
-             <span className={`block w-6 h-0.5 bg-white transition-all duration-300 rounded-full ${mobileMenuOpen ? 'opacity-0' : ''}`}></span>
-             <span className={`block w-6 h-0.5 bg-white transition-all duration-300 rounded-full ${mobileMenuOpen ? '-rotate-45 -translate-y-2' : ''}`}></span>
+             <div className="w-6 h-5 relative flex flex-col justify-between">
+                <span className={`block w-full h-1 bg-current transition-all duration-300 rounded-full ${mobileMenuOpen ? 'rotate-45 translate-y-2' : ''}`}></span>
+                <span className={`block w-full h-1 bg-current transition-all duration-300 rounded-full ${mobileMenuOpen ? 'opacity-0' : ''}`}></span>
+                <span className={`block w-full h-1 bg-current transition-all duration-300 rounded-full ${mobileMenuOpen ? '-rotate-45 -translate-y-2' : ''}`}></span>
+             </div>
           </button>
         </div>
       </div>
 
       {/* Mobile Menu Overlay */}
       <div 
-        className={`lg:hidden fixed inset-0 bg-roBlue z-40 transition-transform duration-300 ease-in-out pt-24 px-6 pb-6 flex flex-col ${
+        className={`lg:hidden fixed inset-0 bg-roBlue z-40 transition-transform duration-500 ease-in-out pt-32 px-10 flex flex-col ${
           mobileMenuOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
-        <div className="flex flex-col space-y-4 overflow-y-auto flex-1">
-          {navLinks.map(link => (
+        <div className="flex flex-col space-y-6 overflow-y-auto flex-1">
+          {navLinks.map((link, idx) => (
             <button 
               key={link.id}
               onClick={() => handleNavClick(link.id)}
-              className="text-white text-2xl font-serif font-bold text-left border-b border-white/10 pb-3 hover:text-roYellow transition-colors"
+              className="text-white text-4xl font-serif font-black text-left border-b border-white/5 pb-6 hover:text-roYellow transition-all transform hover:translate-x-4 flex items-center justify-between group"
+              style={{ transitionDelay: `${idx * 50}ms` }}
             >
-              {link.name}
+              <span>{link.name}</span>
+              <span className="opacity-0 group-hover:opacity-100 transition-opacity text-2xl">→</span>
             </button>
           ))}
         </div>
           
-        <div className="mt-auto space-y-6 pb-6">
-            <div className="flex items-center justify-between border-t border-white/20 pt-6">
-               <span className="text-white/60 font-bold text-sm">Language / Limbă</span>
+        <div className="mt-auto space-y-8 pb-10">
+            <div className="flex items-center justify-between border-t border-white/10 pt-8">
+               <span className="text-white/40 font-black text-xs uppercase tracking-widest">Select Language</span>
                <LanguageSwitcher />
             </div>
 
             {user ? (
-               <div className="bg-white/10 p-5 rounded-2xl space-y-4 shadow-inner">
-                 <div className="flex items-center gap-3">
+               <div className="bg-white/5 backdrop-blur-xl p-8 rounded-[2.5rem] border border-white/10 flex flex-col gap-6 shadow-2xl">
+                 <div className="flex items-center gap-5">
                     <Avatar 
                       src={user.avatar} 
                       name={user.name} 
                       color={user.avatarColor}
                       initials={user.customInitials}
-                      className="w-12 h-12 rounded-full border-2 border-white text-base" 
+                      className="w-20 h-20 rounded-full border-4 border-roYellow shadow-2xl" 
                     />
-                    <div className="overflow-hidden">
-                      <p className="text-white font-bold text-lg truncate">{user.name}</p>
-                      <p className="text-white/60 text-sm truncate">{user.email}</p>
+                    <div>
+                      <p className="text-white font-black text-2xl tracking-tight truncate max-w-[180px]">{user.name}</p>
+                      <p className="text-roYellow font-bold text-sm uppercase">{user.role}</p>
                     </div>
                  </div>
-                 <button onClick={() => { setMobileMenuOpen(false); onDashboardClick(); }} className="w-full bg-roYellow text-roBlue py-3 rounded-xl font-bold text-center hover:bg-white transition-colors shadow-lg">
-                   {t('nav_dashboard')}
-                 </button>
-                 <button onClick={() => { setMobileMenuOpen(false); onLogoutClick(); }} className="w-full text-white/80 py-2 text-center hover:text-white text-sm font-medium">
-                   {t('nav_logout')}
-                 </button>
+                 <div className="grid grid-cols-2 gap-4">
+                    <button onClick={() => { setMobileMenuOpen(false); onDashboardClick(); }} className="bg-roYellow text-roBlue py-5 rounded-2xl font-black text-center shadow-xl">
+                      Dashboard
+                    </button>
+                    <button onClick={() => { setMobileMenuOpen(false); onLogoutClick(); }} className="bg-white/10 text-white py-5 rounded-2xl font-black text-center border border-white/10">
+                      Logout
+                    </button>
+                 </div>
                </div>
             ) : (
               <button 
                 onClick={() => { setMobileMenuOpen(false); onLoginClick(); }}
-                className="w-full bg-white text-roBlue py-4 rounded-xl font-bold text-lg shadow-lg hover:bg-gray-100 transition-colors"
+                className="w-full bg-roYellow text-roBlue py-6 rounded-[2rem] font-black text-2xl shadow-[0_15px_40px_-10px_rgba(252,209,22,0.4)] transition-transform active:scale-95"
               >
                 {t('nav_login')}
               </button>

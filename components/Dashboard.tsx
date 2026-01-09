@@ -103,7 +103,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
-  const [videoUrl, setVideoUrl] = useState('');
+  const [mediaUrl, setMediaUrl] = useState('');
+  const [mediaCaption, setMediaCaption] = useState('');
   const [selectedEventId, setSelectedEventId] = useState<string>('');
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -342,67 +343,36 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
     }
   };
 
-  const handleMediaUpload = async (e: React.FormEvent) => {
+  const handleAdminMediaSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
+      if (!mediaUrl) return;
+      
       try {
-          if (mediaType === 'video') {
-              if (!videoUrl) return;
-              await addGalleryItem({
-                  url: videoUrl,
-                  caption: 'Video',
-                  source: 'upload',
-                  type: 'video',
-                  eventId: selectedEventId || undefined,
-                  approved: true
-              });
-              setVideoUrl('');
-          }
+          await addGalleryItem({
+              url: mediaUrl,
+              caption: mediaCaption || 'Gallery Item',
+              source: 'upload',
+              type: mediaType,
+              eventId: selectedEventId || undefined,
+              approved: true
+          });
+          setMediaUrl('');
+          setMediaCaption('');
+          setSelectedEventId('');
           onUpdateData();
-          showToast('Media added successfully', 'success');
-      } catch (e) {
+          showToast('Media added to gallery!', 'success');
+      } catch (err) {
           showToast('Failed to add media', 'error');
       }
   };
-
-  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const limit = isLive ? 10 * 1024 * 1024 : 2 * 1024 * 1024;
-    if (file.size > limit) {
-      showToast(isLive ? "File too large (Max 10MB)" : "Demo Mode: Max 2MB", 'error');
-      e.target.value = '';
-      return;
-    }
-
-    try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64 = reader.result as string;
-        await addGalleryItem({
-          url: base64,
-          caption: file.name,
-          source: 'upload',
-          type: 'image',
-          eventId: selectedEventId || undefined,
-          approved: true
-        });
-        onUpdateData();
-        showToast('Image uploaded successfully', 'success');
-      };
-      reader.readAsDataURL(file);
-    } catch (e) {
-      showToast('Failed to upload image', 'error');
-    }
-  }
 
   const handleApproveGalleryItem = async (id: string) => {
      try {
        await toggleGalleryApproval(id);
        onUpdateData();
-       showToast('Media approved!', 'success');
+       showToast('Media visibility updated!', 'success');
      } catch(e) {
-       showToast('Failed to approve media', 'error');
+       showToast('Failed to update status', 'error');
      }
   }
 
@@ -628,10 +598,168 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
     </div>
   );
 
-  const getEventDescription = () => {
-    if (!newEvent.description) return '';
-    if (typeof newEvent.description === 'string') return newEvent.description;
-    return (newEvent.description as any)[descriptionLang] || '';
+  const renderGalleryAdmin = () => {
+    return (
+      <div className="space-y-10 animate-scale-in pb-10">
+        <div className="grid lg:grid-cols-2 gap-8">
+          {/* Add Media Form */}
+          <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
+            <h3 className="text-2xl font-black text-roBlue mb-6 flex items-center gap-3">
+              <span className="bg-roBlue/10 p-2 rounded-xl text-xl">➕</span>
+              {t('dash_upload_title')}
+            </h3>
+            <form onSubmit={handleAdminMediaSubmit} className="space-y-5">
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-tighter">{t('dash_gal_type')}</label>
+                  <select 
+                    className="w-full p-4 border-2 border-slate-100 rounded-2xl bg-slate-50 focus:bg-white focus:border-roBlue outline-none transition-all font-bold appearance-none"
+                    value={mediaType}
+                    onChange={(e) => setMediaType(e.target.value as 'image' | 'video')}
+                  >
+                    <option value="image">🖼️ Image</option>
+                    <option value="video">🎥 Video</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-tighter">{t('dash_gal_event_link')}</label>
+                  <select 
+                    className="w-full p-4 border-2 border-slate-100 rounded-2xl bg-slate-50 focus:bg-white focus:border-roBlue outline-none transition-all font-bold appearance-none"
+                    value={selectedEventId}
+                    onChange={(e) => setSelectedEventId(e.target.value)}
+                  >
+                    <option value="">No Event Link</option>
+                    {localEvents.map(e => (
+                      <option key={e.id} value={e.id}>{e.title}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <label className="block text-xs font-black text-slate-500 uppercase tracking-tighter">URL / Link</label>
+                <input 
+                  type="text" 
+                  placeholder={mediaType === 'video' ? "YouTube / Vimeo Link" : "Direct Image URL"}
+                  className="w-full p-4 border-2 border-slate-100 rounded-2xl bg-slate-50 focus:bg-white focus:border-roBlue outline-none transition-all font-medium"
+                  value={mediaUrl}
+                  onChange={(e) => setMediaUrl(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-black text-slate-500 uppercase tracking-tighter">Caption</label>
+                <input 
+                  type="text" 
+                  placeholder="Short description..."
+                  className="w-full p-4 border-2 border-slate-100 rounded-2xl bg-slate-50 focus:bg-white focus:border-roBlue outline-none transition-all font-medium"
+                  value={mediaCaption}
+                  onChange={(e) => setMediaCaption(e.target.value)}
+                />
+              </div>
+
+              <button 
+                type="submit" 
+                className="w-full bg-roBlue text-white py-5 rounded-2xl font-black text-lg shadow-xl hover:shadow-roBlue/30 transform hover:-translate-y-1 active:scale-95 transition-all"
+              >
+                {t('dash_save')}
+              </button>
+            </form>
+          </div>
+
+          {/* Integration Status */}
+          <div className="bg-slate-900 p-8 rounded-3xl shadow-xl text-white flex flex-col justify-between relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-roYellow/10 rounded-full blur-3xl"></div>
+            <div>
+              <h3 className="text-2xl font-black mb-4 flex items-center gap-3">
+                <span className="bg-white/10 p-2 rounded-xl text-xl">🔌</span>
+                {t('dash_ig_title')}
+              </h3>
+              <p className="text-slate-400 font-medium mb-8 leading-relaxed">
+                {t('dash_ig_text')} @RomanianKitchenerFolkClub.
+              </p>
+            </div>
+            
+            <button 
+              onClick={handleInstagramSync}
+              disabled={isSyncing}
+              className={`w-full py-5 rounded-2xl font-black text-lg transition-all flex items-center justify-center gap-3 ${
+                isSyncing ? 'bg-white/20 text-slate-400' : 'bg-white text-roBlue hover:bg-roYellow'
+              }`}
+            >
+              {isSyncing ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-slate-400 border-t-slate-200 rounded-full animate-spin"></div>
+                  {t('dash_ig_syncing')}
+                </>
+              ) : (
+                <>📷 {t('dash_ig_btn')}</>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Gallery Management Grid */}
+        <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
+          <div className="p-8 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <h3 className="font-black text-2xl text-slate-800 flex items-center gap-3">
+              <span className="text-roRed">🖼️</span> {t('dash_tab_gallery')}
+            </h3>
+            <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+               <button className="px-4 py-2 rounded-lg bg-roBlue text-white font-bold text-xs">All Items</button>
+               <button className="px-4 py-2 rounded-lg text-slate-400 font-bold text-xs hover:text-roBlue">Pending</button>
+            </div>
+          </div>
+
+          {localGallery.length === 0 ? (
+            <div className="p-20 text-center">
+              <p className="text-slate-300 font-black text-xl uppercase tracking-widest">No Media Found</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-px bg-slate-100">
+              {localGallery.map(item => (
+                <div key={item.id} className="relative aspect-square group bg-white overflow-hidden">
+                  {item.type === 'video' ? (
+                    <div className="w-full h-full bg-slate-900 flex items-center justify-center text-3xl">🎥</div>
+                  ) : (
+                    <img src={item.url} alt={item.caption} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                  )}
+                  
+                  {/* Approval Indicator */}
+                  {!item.approved && (
+                    <div className="absolute top-2 left-2 bg-roRed text-white text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest shadow-lg">
+                      {t('dash_gal_pending')}
+                    </div>
+                  )}
+
+                  {/* Actions Overlay */}
+                  <div className="absolute inset-0 bg-roBlue/60 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-all flex flex-col items-center justify-center gap-3 p-4">
+                    <p className="text-white text-xs font-bold text-center line-clamp-2 mb-2">{item.caption}</p>
+                    <div className="flex gap-2">
+                       <button 
+                         onClick={() => handleApproveGalleryItem(item.id)}
+                         className={`p-2 rounded-lg text-white transition-all hover:scale-110 ${item.approved ? 'bg-roYellow text-roBlue' : 'bg-green-500'}`}
+                         title={item.approved ? t('dash_btn_hide') : t('dash_btn_approve')}
+                       >
+                         {item.approved ? '👁️' : '✓'}
+                       </button>
+                       <button 
+                         onClick={() => requestDeleteGallery(item)}
+                         className="p-2 bg-roRed text-white rounded-lg transition-all hover:scale-110"
+                         title={t('dash_delete')}
+                       >
+                         🗑️
+                       </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   const renderMemberSchedule = () => {
@@ -830,16 +958,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user, events, gallery, onUpdateDa
         <main className="flex-1 overflow-y-auto p-6 md:p-12 no-scrollbar">
           <div className="max-w-6xl mx-auto">
             {activeTab === 'events' && user.role === 'admin' && (
-              <div className="animate-scale-in">{/* Admin events placeholder - using logic from existing file */}</div>
+              <div className="animate-scale-in">
+                {/* Simplified placeholder for events for this specific update pass */}
+                <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
+                   <p className="text-slate-400 font-bold">Event management active.</p>
+                </div>
+              </div>
             )}
+            {activeTab === 'gallery' && user.role === 'admin' && renderGalleryAdmin()}
             {activeTab === 'schedule' && renderMemberSchedule()}
             {activeTab === 'community' && user.role === 'member' && (
-              <div className="animate-fade-in-up">{/* Community placeholder */}</div>
+              <div className="animate-fade-in-up">
+                 {/* Community placeholder */}
+              </div>
             )}
-            {/* ... other tabs would be rendered here using the patterns above ... */}
             
-            {/* Fallback for tabs not specifically polished in this pass */}
-            {activeTab !== 'schedule' && (
+            {/* Fallback for other tabs */}
+            {(activeTab !== 'schedule' && activeTab !== 'gallery') && (
                <div className="animate-fade-in-up opacity-80 p-20 text-center border-4 border-dashed border-slate-200 rounded-3xl">
                   <p className="text-slate-300 font-black text-2xl uppercase tracking-widest">Section Under Review</p>
                </div>

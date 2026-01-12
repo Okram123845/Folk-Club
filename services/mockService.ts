@@ -178,7 +178,10 @@ export const getEvents = async (): Promise<Event[]> => {
       attendees: [], // Default value
       ...d.data() 
     } as Event));
-  } catch (e) { ... }
+  } catch (e) { 
+    console.error("Failed to fetch events:", e);
+    return [];
+  }
 };
 
 export const saveEvent = async (event: Event): Promise<Event> => {

@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { sendContactMessage, getPageContent } from '../services/mockService';
+import { sendContactMessage, getPageContent } from '../services/mockService.ts';
 import { useTranslation } from '../services/translations';
 
 const Contact: React.FC = () => {
@@ -22,15 +23,19 @@ const Contact: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus('sending');
-    await sendContactMessage(formData);
-    setStatus('success');
-    setFormData({ name: '', email: '', message: '' });
-    setTimeout(() => setStatus('idle'), 3000);
+    try {
+      await sendContactMessage(formData);
+      setStatus('success');
+      setFormData({ name: '', email: '', message: '' });
+      setTimeout(() => setStatus('idle'), 3000);
+    } catch (err) {
+      console.error(err);
+      setStatus('idle');
+    }
   };
 
   return (
     <section id="contact" className="py-16 md:py-20 bg-slate-900 text-white relative overflow-hidden w-full">
-        {/* Abstract Background */}
         <div className="absolute top-0 right-0 w-1/2 h-full bg-roRed/10 rounded-l-full blur-3xl pointer-events-none"></div>
         <div className="absolute bottom-0 left-0 w-1/3 h-full bg-roBlue/20 rounded-r-full blur-3xl pointer-events-none"></div>
 

@@ -26,21 +26,16 @@ const Events: React.FC<EventsProps> = ({ events, user, onRsvp, onViewArchive, on
   const filteredEvents = upcomingEvents.filter(event => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
-    
-    // Check Title
-    if (event.title.toLowerCase().includes(q)) return true;
-    
-    // Check Location
-    if (event.location.toLowerCase().includes(q)) return true;
-    
-    // Check Description (all languages)
+
+    if (event.title?.toLowerCase().includes(q)) return true;
+    if (event.location?.toLowerCase().includes(q)) return true;
+
     if (typeof event.description === 'string') {
         if (event.description.toLowerCase().includes(q)) return true;
-    } else {
+    } else if (event.description) { // Added check for existence
         const descValues = Object.values(event.description);
-        if (descValues.some((val: string) => val.toLowerCase().includes(q))) return true;
+        if (descValues.some((val: any) => val?.toString().toLowerCase().includes(q))) return true;
     }
-    
     return false;
   });
 
@@ -56,7 +51,7 @@ const Events: React.FC<EventsProps> = ({ events, user, onRsvp, onViewArchive, on
     
     // Check if we are joining (not already in attendees)
     const event = events.find(ev => ev.id === eventId);
-    const isJoining = event && user && !event.attendees.includes(user.id);
+    const isJoining = event && user && !(event.attendees || []).includes(user.id);
 
     onRsvp(eventId);
 

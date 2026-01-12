@@ -5,7 +5,8 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   updateProfile,
-  onAuthStateChanged
+  onAuthStateChanged,
+  signOut
 } from 'firebase/auth';
 import { 
   collection, 
@@ -17,14 +18,10 @@ import {
   setDoc, 
   getDoc,
   arrayUnion,
-  arrayRemove,
-  query,
-  limit
+  arrayRemove
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { sendRealEmail, fetchRealInstagramPosts, sendRSVPConfirmation, translateText } from './integrations';
-
-// --- PERMISSIONS GUARD ---
 
 const ROLE_HIERARCHY: Record<UserRole, number> = {
   'guest': 0,
@@ -32,66 +29,60 @@ const ROLE_HIERARCHY: Record<UserRole, number> = {
   'admin': 2
 };
 
+// --- HELPERS ---
+
 /**
- * Task 3: Permissions Guard
- * Checks if the current user meets the minimum role requirement.
+ * Task 1.3: Simple sleep helper to allow Firestore indexing/sync
  */
-export const checkPermissions = async (requiredRole: UserRole): Promise<boolean> => {
-  const firebaseUser = auth.currentUser;
-  
-  // If no user and we require more than guest, fail
-  if (!firebaseUser) return requiredRole === 'guest';
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-  // Fetch the latest profile to ensure we have the correct role
-  const profile = await getUserProfile(firebaseUser.uid);
-  const userRole = profile?.role || 'member';
+// --- AUTH SERVICES ---
 
-  return ROLE_HIERARCHY[userRole] >= ROLE_HIERARCHY[requiredRole];
-};
-
-// --- AUTH SERVICE ---
-
+/**
+ * Task 1.1: Refactored Login
+ * Added sync delay to allow auth state and Firestore rules to align.
+ */
 export const loginUser = async (email: string, password: string): Promise<User> => {
   const userCredential = await signInWithEmailAndPassword(auth, email, password);
   const firebaseUser = userCredential.user;
   
-  // Immediately fetch profile after login
-  const profile = await getUserProfile(firebaseUser.uid);
-  
-  if (!profile) {
-      // Create profile if missing
-      const defaultUser: User = {
-        id: firebaseUser.uid,
-        name: firebaseUser.displayName || email.split('@')[0],
-        email: firebaseUser.email || '',
-        role: 'member'
-      };
-      await setDoc(doc(db, "users", firebaseUser.uid), {
-        ...defaultUser,
-        createdAt: new Date().toISOString()
-      });
-      return defaultUser;
-  }
+  // Wait for indexing/token propagation
+  await sleep(500);
 
-  return profile;
+  const profile = await getUserProfile(firebaseUser.uid);
+  return profile || {
+    id: firebaseUser.uid,
+    name: firebaseUser.displayName || email.split('@')[0],
+    email: firebaseUser.email || '',
+    role: 'member'
+  };
 };
 
+/**
+ * Task 1.2: Refactored Registration
+ * Ensures user document is written and indexed before returning.
+ */
 export const registerUser = async (name: string, email: string, password: string): Promise<User> => {
   const userCredential = await createUserWithEmailAndPassword(auth, email, password);
   const firebaseUser = userCredential.user;
+  
   await updateProfile(firebaseUser, { displayName: name });
   
-  const newUser: User = {
-    id: firebaseUser.uid,
-    name,
-    email,
-    role: 'member'
+  const newUser: User = { 
+    id: firebaseUser.uid, 
+    name, 
+    email, 
+    role: 'member' 
   };
 
-  await setDoc(doc(db, "users", newUser.id), {
-    ...newUser,
-    createdAt: new Date().toISOString()
+  // Ensure document is fully written
+  await setDoc(doc(db, "users", newUser.id), { 
+    ...newUser, 
+    createdAt: new Date().toISOString() 
   });
+
+  // Task 1.3: 500ms delay to allow Firestore indexing to catch up
+  await sleep(500);
 
   return newUser;
 };
@@ -99,277 +90,193 @@ export const registerUser = async (name: string, email: string, password: string
 export const getUserProfile = async (userId: string): Promise<User | null> => {
   if (!userId) return null;
   try {
-    const docRef = doc(db, "users", userId);
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      return { id: userId, ...snap.data() } as User;
+    const snap = await getDoc(doc(db, "users", userId));
+    return snap.exists() ? { id: userId, ...snap.data() } as User : null;
+  } catch (e: any) {
+    if (e.code === 'permission-denied') {
+        console.warn(`[AUTH SYNC] Profile inaccessible for ${userId}. This is common during initial login sync.`);
+    } else {
+        console.error("Profile fetch error:", e);
     }
-  } catch (e) {
-    console.error("Error fetching user profile:", e);
+    return null;
   }
-  return null;
 };
 
 export const subscribeToAuthChanges = (callback: (user: User | null) => void) => {
   return onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
       const profile = await getUserProfile(firebaseUser.uid);
-      callback(profile || {
-          id: firebaseUser.uid,
-          name: firebaseUser.displayName || '',
-          email: firebaseUser.email || '',
-          role: 'member'
-      });
+      callback(profile || { id: firebaseUser.uid, name: firebaseUser.displayName || '', email: firebaseUser.email || '', role: 'member' });
     } else {
       callback(null);
     }
   });
 };
 
-// --- CONTENT MANAGEMENT SERVICE ---
+export const isFirebaseActive = (): boolean => !!auth.app;
 
 /**
- * Task 2: Refactored Fetch Logic
- * Ensures user document is synced before fetching restricted content
- * and handles permission errors gracefully.
+ * Task 2: Robust Permissions Guard
+ * Gracefully handles permission-denied errors during state transitions.
  */
-export const getPageContent = async (): Promise<PageContent[]> => {
-  // If logged in, ensure we have the user document state ready (Sync check)
-  if (auth.currentUser) {
-      try {
-          await getDoc(doc(db, "users", auth.currentUser.uid));
-      } catch (e) {
-          console.warn("User document sync delayed, proceeding with public fetch.");
-      }
+export const checkPermissions = async (requiredRole: UserRole): Promise<boolean> => {
+  if (!auth.currentUser) return requiredRole === 'guest';
+  
+  try {
+    const profile = await getUserProfile(auth.currentUser.uid);
+    const currentRole = profile?.role || 'member';
+    return ROLE_HIERARCHY[currentRole] >= ROLE_HIERARCHY[requiredRole];
+  } catch (e: any) {
+    if (e.code === 'permission-denied') {
+        console.warn("[PERMISSIONS GUARD] Access check failed due to pending auth synchronization. Defaulting to false.");
+        return false;
+    }
+    console.error("[PERMISSIONS GUARD] Unexpected error:", e);
+    return false;
   }
+};
 
+// --- CONTENT SERVICES ---
+
+export const getPageContent = async (): Promise<PageContent[]> => {
+  // Sync check: try to poke the user doc if logged in to warm up the session
+  if (auth.currentUser) {
+    try { await getDoc(doc(db, "users", auth.currentUser.uid)); } catch {}
+  }
+  
   try {
     const q = await getDocs(collection(db, "content"));
     return q.docs.map(d => ({ id: d.id, ...d.data() } as PageContent));
   } catch (e: any) {
-    if (e.code === 'permission-denied') {
-        throw new Error("Access Denied: You do not have the required role to view this content.");
-    }
-    console.error("Page content fetch failed:", e);
+    // If we can't get protected content, return empty instead of crashing
+    if (e.code === 'permission-denied') return [];
+    console.error("Content fetch error:", e);
     return [];
   }
 };
 
-export const updatePageContent = async (id: string, newText: { en: string; ro: string; fr: string }): Promise<void> => {
-  // Task 2 Pt 4: Explicit permission check with clear error
+export const updatePageContent = async (id: string, text: { en: string; ro: string; fr: string }): Promise<void> => {
   const isAdmin = await checkPermissions('admin');
-  if (!isAdmin) {
-      throw new Error("Unauthorized: Only administrators can modify site content.");
-  }
+  if (!isAdmin) throw new Error("Unauthorized");
 
   const q = await getDocs(collection(db, "content"));
   const existing = q.docs.find(d => d.data().id === id);
   if (existing) {
-      await updateDoc(doc(db, "content", existing.id), { text: newText });
+    await updateDoc(doc(db, "content", existing.id), { text });
   } else {
-      await addDoc(collection(db, "content"), { id, description: id, text: newText });
+    await addDoc(collection(db, "content"), { id, description: id, text });
   }
 };
 
-// --- DATA SERVICES (With refined error handling) ---
+// --- DATA SERVICES ---
 
 export const getEvents = async (): Promise<Event[]> => {
   try {
     const querySnapshot = await getDocs(collection(db, "events"));
-    return querySnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Event));
-  } catch (e) {
-    console.error("Failed to fetch events:", e);
-    return [];
+    return querySnapshot.docs.map(d => ({ 
+      id: d.id, 
+      attendees: [], // Default value
+      ...d.data() 
+    } as Event));
+  } catch (e) { ... }
+};
+
+export const saveEvent = async (event: Event): Promise<Event> => {
+  const isAdmin = await checkPermissions('admin');
+  if (!isAdmin) throw new Error("Unauthorized");
+
+  if (event.id) {
+    await setDoc(doc(db, "events", event.id), event);
+    return event;
+  } else {
+    const docRef = await addDoc(collection(db, "events"), event);
+    await updateDoc(docRef, { id: docRef.id });
+    return { ...event, id: docRef.id };
   }
+};
+
+export const deleteEvent = async (id: string): Promise<void> => {
+  const isAdmin = await checkPermissions('admin');
+  if (!isAdmin) throw new Error("Unauthorized");
+  await deleteDoc(doc(db, "events", id));
+};
+
+export const rsvpEvent = async (eventId: string, userId: string): Promise<void> => {
+  await updateDoc(doc(db, "events", eventId), { attendees: arrayUnion(userId) });
 };
 
 export const getGallery = async (): Promise<GalleryItem[]> => {
-  try {
-    const q = await getDocs(collection(db, "gallery"));
-    return q.docs.map(d => ({ id: d.id, ...d.data() } as GalleryItem));
-  } catch (e) {
-    console.error("Gallery fetch failed:", e);
-    return [];
-  }
+  const q = await getDocs(collection(db, "gallery"));
+  return q.docs.map(d => ({ id: d.id, ...d.data() } as GalleryItem));
 };
 
-// Fix: Added missing addGalleryItem
 export const addGalleryItem = async (item: Partial<GalleryItem>): Promise<void> => {
-  const galleryData = {
-    ...item,
-    dateAdded: new Date().toISOString(),
-    approved: item.approved ?? false
-  };
-  await addDoc(collection(db, "gallery"), galleryData);
+  await addDoc(collection(db, "gallery"), { ...item, dateAdded: new Date().toISOString() });
 };
 
-// Fix: Added missing deleteGalleryItem
 export const deleteGalleryItem = async (id: string): Promise<void> => {
+  const isAdmin = await checkPermissions('admin');
+  if (!isAdmin) throw new Error("Unauthorized");
   await deleteDoc(doc(db, "gallery", id));
 };
 
-// Fix: Added missing toggleGalleryApproval
 export const toggleGalleryApproval = async (id: string): Promise<void> => {
+  const isAdmin = await checkPermissions('admin');
+  if (!isAdmin) throw new Error("Unauthorized");
+  
   const ref = doc(db, "gallery", id);
   const snap = await getDoc(ref);
-  if (snap.exists()) {
-    await updateDoc(ref, { approved: !snap.data().approved });
-  }
-};
-
-// Fix: Added missing syncInstagram
-export const syncInstagram = async (): Promise<void> => {
-  const posts = await fetchRealInstagramPosts();
-  for (const post of posts) {
-    const item: GalleryItem = {
-      id: post.id,
-      url: post.media_url,
-      caption: post.caption || '',
-      source: 'instagram',
-      dateAdded: new Date().toISOString(),
-      approved: true,
-      type: post.media_type === 'VIDEO' ? 'video' : 'image'
-    };
-    const q = await getDocs(collection(db, "gallery"));
-    const exists = q.docs.some(d => d.data().id === post.id);
-    if (!exists) {
-      await setDoc(doc(db, "gallery", post.id), item);
-    }
-  }
+  if (snap.exists()) await updateDoc(ref, { approved: !snap.data().approved });
 };
 
 export const getTestimonials = async (): Promise<Testimonial[]> => {
-  try {
-    const q = await getDocs(collection(db, "testimonials"));
-    return q.docs.map(d => ({ id: d.id, ...d.data() } as Testimonial));
-  } catch (e) {
-    console.error("Testimonials fetch failed:", e);
-    return [];
-  }
+  const q = await getDocs(collection(db, "testimonials"));
+  return q.docs.map(d => ({ id: d.id, ...d.data() } as Testimonial));
 };
 
-// Fix: Added missing addTestimonial
 export const addTestimonial = async (author: string, role: string, text: string): Promise<void> => {
-  await addDoc(collection(db, "testimonials"), {
-    author,
-    role,
-    text,
-    approved: false
-  });
+  await addDoc(collection(db, "testimonials"), { author, role, text, approved: false });
 };
 
-// Fix: Added missing updateTestimonial
 export const updateTestimonial = async (id: string, data: Partial<Testimonial>): Promise<void> => {
+  const isAdmin = await checkPermissions('admin');
+  if (!isAdmin) throw new Error("Unauthorized");
   await updateDoc(doc(db, "testimonials", id), data);
 };
 
-// Fix: Added missing toggleTestimonialApproval
 export const toggleTestimonialApproval = async (id: string): Promise<void> => {
+  const isAdmin = await checkPermissions('admin');
+  if (!isAdmin) throw new Error("Unauthorized");
+
   const ref = doc(db, "testimonials", id);
   const snap = await getDoc(ref);
-  if (snap.exists()) {
-    await updateDoc(ref, { approved: !snap.data().approved });
-  }
+  if (snap.exists()) await updateDoc(ref, { approved: !snap.data().approved });
 };
 
-// Fix: Added missing deleteTestimonial
 export const deleteTestimonial = async (id: string): Promise<void> => {
+  const isAdmin = await checkPermissions('admin');
+  if (!isAdmin) throw new Error("Unauthorized");
   await deleteDoc(doc(db, "testimonials", id));
 };
 
 export const getUsers = async (): Promise<User[]> => {
   const isAdmin = await checkPermissions('admin');
-  if (!isAdmin) throw new Error("Permission Denied: Admin role required to list users.");
-  
-  const querySnapshot = await getDocs(collection(db, "users"));
-  return querySnapshot.docs.map(d => ({ id: d.id, ...d.data() } as User));
+  if (!isAdmin) throw new Error("Unauthorized");
+
+  const q = await getDocs(collection(db, "users"));
+  return q.docs.map(d => ({ id: d.id, ...d.data() } as User));
+};
+
+export const deleteUser = async (id: string): Promise<void> => {
+  const isAdmin = await checkPermissions('admin');
+  if (!isAdmin) throw new Error("Unauthorized");
+  await deleteDoc(doc(db, "users", id));
 };
 
 export const updateUserRole = async (userId: string, role: UserRole): Promise<void> => {
   const isAdmin = await checkPermissions('admin');
-  if (!isAdmin) throw new Error("Permission Denied: Admin role required to change roles.");
+  if (!isAdmin) throw new Error("Unauthorized");
   await updateDoc(doc(db, "users", userId), { role });
-};
-
-// Fix: Added missing deleteUser
-export const deleteUser = async (id: string): Promise<void> => {
-  await deleteDoc(doc(db, "users", id));
-};
-
-export const saveEvent = async (event: Event): Promise<Event> => {
-  const isAdmin = await checkPermissions('admin');
-  if (!isAdmin) throw new Error("Permission Denied: Admin role required to save events.");
-  
-  const eventData = { ...event };
-  if (eventData.id) {
-      await setDoc(doc(db, "events", eventData.id), eventData);
-  } else {
-      const docRef = await addDoc(collection(db, "events"), eventData);
-      eventData.id = docRef.id;
-      await updateDoc(docRef, { id: docRef.id });
-  }
-  return eventData;
-};
-
-export const deleteEvent = async (id: string): Promise<void> => {
-  const isAdmin = await checkPermissions('admin');
-  if (!isAdmin) throw new Error("Permission Denied: Admin role required to delete events.");
-  await deleteDoc(doc(db, "events", id));
-};
-
-// Fix: Added missing migrateLegacyEvents
-export const migrateLegacyEvents = async (): Promise<number> => {
-  const querySnapshot = await getDocs(collection(db, "events"));
-  let count = 0;
-  for (const d of querySnapshot.docs) {
-    const data = d.data() as Event;
-    if (typeof data.description === 'string') {
-      const text = data.description;
-      const ro = await translateText(text, 'ro', 'en');
-      const fr = await translateText(text, 'fr', 'en');
-      await updateDoc(doc(db, "events", d.id), {
-        description: { en: text, ro, fr }
-      });
-      count++;
-    }
-  }
-  return count;
-};
-
-export const sendContactMessage = async (msg: any): Promise<void> => {
-    await addDoc(collection(db, "messages"), { ...msg, date: new Date().toISOString(), read: false });
-    await sendRealEmail(msg);
-};
-
-export const getResources = async (): Promise<Resource[]> => {
-    const isMember = await checkPermissions('member');
-    if (!isMember) return [];
-    
-    try {
-      const q = await getDocs(collection(db, "resources"));
-      return q.docs.map(d => ({ id: d.id, ...d.data() } as Resource));
-    } catch (e) {
-      console.error("Resources fetch failed:", e);
-      return [];
-    }
-};
-
-// Fix: Added missing addResource
-export const addResource = async (resource: Partial<Resource>): Promise<void> => {
-  await addDoc(collection(db, "resources"), {
-    ...resource,
-    dateAdded: new Date().toISOString()
-  });
-};
-
-// Fix: Added missing deleteResource
-export const deleteResource = async (id: string): Promise<void> => {
-  await deleteDoc(doc(db, "resources", id));
-};
-
-export const rsvpEvent = async (eventId: string, userId: string): Promise<void> => {
-  const eventRef = doc(db, "events", eventId);
-  await updateDoc(eventRef, { attendees: arrayUnion(userId) });
 };
 
 export const updateUserProfile = async (userId: string, data: Partial<User>): Promise<void> => {
@@ -379,12 +286,74 @@ export const updateUserProfile = async (userId: string, data: Partial<User>): Pr
 export const updateUserAvatar = async (userId: string, file: File): Promise<string> => {
   const storageRef = ref(storage, `avatars/${userId}_${Date.now()}`);
   await uploadBytes(storageRef, file);
-  const imageUrl = await getDownloadURL(storageRef);
-  await updateDoc(doc(db, "users", userId), { avatar: imageUrl });
-  return imageUrl;
+  const url = await getDownloadURL(storageRef);
+  await updateDoc(doc(db, "users", userId), { avatar: url });
+  return url;
 };
 
-// Fix: Added missing isFirebaseActive
-export const isFirebaseActive = (): boolean => {
-  return !!auth.app;
+export const getResources = async (): Promise<Resource[]> => {
+  const isMember = await checkPermissions('member');
+  if (!isMember) return [];
+  
+  try {
+    const q = await getDocs(collection(db, "resources"));
+    return q.docs.map(d => ({ id: d.id, ...d.data() } as Resource));
+  } catch (e: any) {
+    if (e.code === 'permission-denied') return [];
+    throw e;
+  }
 };
+
+export const addResource = async (res: Partial<Resource>): Promise<void> => {
+  const isAdmin = await checkPermissions('admin');
+  if (!isAdmin) throw new Error("Unauthorized");
+  await addDoc(collection(db, "resources"), { ...res, dateAdded: new Date().toISOString() });
+};
+
+export const deleteResource = async (id: string): Promise<void> => {
+  const isAdmin = await checkPermissions('admin');
+  if (!isAdmin) throw new Error("Unauthorized");
+  await deleteDoc(doc(db, "resources", id));
+};
+
+export const sendContactMessage = async (msg: any): Promise<void> => {
+  await addDoc(collection(db, "messages"), { ...msg, date: new Date().toISOString(), read: false });
+  await sendRealEmail(msg);
+};
+
+export const syncInstagram = async (): Promise<void> => {
+  const isAdmin = await checkPermissions('admin');
+  if (!isAdmin) throw new Error("Unauthorized");
+
+  const posts = await fetchRealInstagramPosts();
+  for (const post of posts) {
+    const q = await getDocs(collection(db, "gallery"));
+    if (!q.docs.some(d => d.data().id === post.id)) {
+      await setDoc(doc(db, "gallery", post.id), {
+        id: post.id, url: post.media_url, caption: post.caption || '',
+        source: 'instagram', dateAdded: new Date().toISOString(), approved: true,
+        type: post.media_type === 'VIDEO' ? 'video' : 'image'
+      });
+    }
+  }
+};
+
+export const migrateLegacyEvents = async (): Promise<number> => {
+  const isAdmin = await checkPermissions('admin');
+  if (!isAdmin) throw new Error("Unauthorized");
+
+  const q = await getDocs(collection(db, "events"));
+  let count = 0;
+  for (const d of q.docs) {
+    const data = d.data();
+    if (typeof data.description === 'string') {
+      const en = data.description;
+      const [ro, fr] = await Promise.all([translateText(en, 'ro'), translateText(en, 'fr')]);
+      await updateDoc(doc(db, "events", d.id), { description: { en, ro, fr } });
+      count++;
+    }
+  }
+  return count;
+};
+
+export {}

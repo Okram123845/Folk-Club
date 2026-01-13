@@ -1,27 +1,66 @@
 
+rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Improved isAdmin check: only checks the document if auth exists
+    // Helper: Check if user is an admin
     function isAdmin() {
       return request.auth != null && 
              exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // Site content (Ensure PUBLIC read is explicitly allowed)
+    // Helper: Check if user is a member
+    function isMember() {
+      return request.auth != null && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'member' || 
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow write: if request.auth != null && (request.auth.uid == userId || isAdmin());
+    }
+
+    // Site Content
     match /content/{itemId} {
-      // This ensures the "Access Denied" error doesn't happen for public text
       allow read: if true; 
       allow write: if isAdmin();
     }
 
-    // Resources (Ensure it handles the 'member' role via the document)
-    match /resources/{itemId} {
-      allow read: if request.auth != null;
+    // Events
+    match /events/{eventId} {
+      allow read: if true;
       allow write: if isAdmin();
     }
-    
-    // ... keep other rules as they were
+
+    // Gallery
+    match /gallery/{itemId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if isAdmin();
+    }
+
+    // Testimonials
+    match /testimonials/{itemId} {
+      allow read: if true;
+      allow create: if true; // Allow public/member submission
+      allow update, delete: if isAdmin();
+    }
+
+    // Resources
+    match /resources/{itemId} {
+      allow read: if isMember();
+      allow write: if isAdmin();
+    }
+
+    // Contact Messages
+    match /messages/{itemId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
   }
 }

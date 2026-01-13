@@ -29,6 +29,7 @@ import { translateText } from '../services/integrations';
 import LanguageSwitcher from './LanguageSwitcher';
 import Toast from './Toast';
 import Avatar from './Avatar';
+import ConfirmModal from './ConfirmModal';
 
 interface DashboardProps {
   user: User;
@@ -47,6 +48,16 @@ const AdminDashboard: React.FC<DashboardProps & { setActiveTab: (t: string) => v
   const [loading, setLoading] = useState(false);
   const [descLang, setDescLang] = useState<Language>('en');
 
+  // Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isDestructive: boolean;
+    previewImage?: string;
+  } | null>(null);
+
   // Shared Data
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
@@ -64,25 +75,38 @@ const AdminDashboard: React.FC<DashboardProps & { setActiveTab: (t: string) => v
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => setToast({ message, type });
 
-  // Define refreshData to handle data reloading and resolve compilation errors
   const refreshData = async () => {
-    try {
-      const [u, tsts, cnt, res] = await Promise.all([getUsers(), getTestimonials(), getPageContent(), getResources()]);
-      setAllUsers(u);
-      setTestimonials(tsts);
-      setPageContent(cnt);
-      setResources(res);
-      // Also trigger parent state update for events/gallery
-      onUpdateData();
-    } catch (err) {
-      console.error("Refresh failed:", err);
-      showToast("Failed to refresh data", "error");
-    }
+    getUsers().then(setAllUsers).catch(() => console.warn("Users load failed"));
+    getTestimonials().then(setTestimonials).catch(() => console.warn("Testimonials load failed"));
+    getPageContent().then(setPageContent).catch(() => console.warn("Content load failed"));
+    getResources().then(setResources).catch(() => console.warn("Resources load failed"));
+    onUpdateData();
   };
 
   useEffect(() => {
     refreshData();
   }, [activeTab]);
+
+  const triggerDelete = (title: string, message: string, onConfirm: () => Promise<void>, previewImage?: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: async () => {
+        try {
+          await onConfirm();
+          showToast(t('dash_content_saved'));
+          refreshData();
+        } catch (err) {
+          showToast("Deletion failed", "error");
+        } finally {
+          setConfirmModal(null);
+        }
+      },
+      isDestructive: true,
+      previewImage
+    });
+  };
 
   const handleAutoTranslate = async (type: 'event' | 'content') => {
     const source = type === 'event' ? (editEvent.description as any)[descLang] : contentTexts[descLang];
@@ -148,7 +172,7 @@ const AdminDashboard: React.FC<DashboardProps & { setActiveTab: (t: string) => v
         <div className="p-6 border-b flex justify-between items-center"><h3 className="font-black text-slate-800">{events.length} Events</h3></div>
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400"><tr><th className="px-6 py-4">Event</th><th className="px-6 py-4">Date</th><th className="px-6 py-4">Attendees</th><th className="px-6 py-4 text-right">Actions</th></tr></thead>
-          <tbody className="divide-y">{events.map(ev => (<tr key={ev.id} className="hover:bg-slate-50 transition-colors"><td className="px-6 py-4 font-bold">{ev.title}</td><td className="px-6 py-4 text-slate-500">{ev.date}</td><td className="px-6 py-4 text-slate-500">{ev.attendees.length}</td><td className="px-6 py-4 text-right space-x-2"><button onClick={() => setEditEvent(ev)} className="p-2 text-roBlue hover:bg-roBlue/5 rounded-lg">✏️</button><button onClick={() => deleteEvent(ev.id).then(onUpdateData)} className="p-2 text-roRed hover:bg-roRed/5 rounded-lg">🗑️</button></td></tr>))}</tbody>
+          <tbody className="divide-y">{events.map(ev => (<tr key={ev.id} className="hover:bg-slate-50 transition-colors"><td className="px-6 py-4 font-bold">{ev.title}</td><td className="px-6 py-4 text-slate-500">{ev.date}</td><td className="px-6 py-4 text-slate-500">{ev.attendees.length}</td><td className="px-6 py-4 text-right space-x-2"><button onClick={() => setEditEvent(ev)} className="p-2 text-roBlue hover:bg-roBlue/5 rounded-lg">✏️</button><button onClick={() => triggerDelete("Delete Event", `Are you sure you want to delete "${ev.title}"?`, () => deleteEvent(ev.id), ev.image)} className="p-2 text-roRed hover:bg-roRed/5 rounded-lg">🗑️</button></td></tr>))}</tbody>
         </table>
       </div>
     </div>
@@ -173,7 +197,7 @@ const AdminDashboard: React.FC<DashboardProps & { setActiveTab: (t: string) => v
         </div>
       </div>
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"><div className="p-6 border-b"><h3 className="font-black text-slate-800">Pending Review</h3></div><div className="p-10 text-center text-slate-400 italic">No pending items.</div></div>
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"><div className="p-6 border-b"><h3 className="font-black text-slate-800">Approved Media</h3></div><div className="grid grid-cols-2 md:grid-cols-5 gap-px bg-slate-100">{gallery.map(item => (<div key={item.id} className="relative aspect-square group bg-white"><img src={item.url} className="w-full h-full object-cover" /><div className="absolute inset-0 bg-roBlue/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><button onClick={() => deleteGalleryItem(item.id).then(onUpdateData)} className="p-2 bg-roRed text-white rounded-full">🗑️</button></div></div>))}</div></div>
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"><div className="p-6 border-b"><h3 className="font-black text-slate-800">Approved Media</h3></div><div className="grid grid-cols-2 md:grid-cols-5 gap-px bg-slate-100">{gallery.map(item => (<div key={item.id} className="relative aspect-square group bg-white"><img src={item.url} className="w-full h-full object-cover" /><div className="absolute inset-0 bg-roBlue/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><button onClick={() => triggerDelete("Delete Media", "Delete this item from the gallery?", () => deleteGalleryItem(item.id), item.url)} className="p-2 bg-roRed text-white rounded-full">🗑️</button></div></div>))}</div></div>
     </div>
   );
 
@@ -183,7 +207,7 @@ const AdminDashboard: React.FC<DashboardProps & { setActiveTab: (t: string) => v
       <table className="w-full text-left text-sm">
         <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400"><tr><th className="px-6 py-4">User</th><th className="px-6 py-4">Email</th><th className="px-6 py-4">Role</th><th className="px-6 py-4 text-right">Actions</th></tr></thead>
         <tbody className="divide-y">{allUsers.map(u => (
-          <tr key={u.id} className="hover:bg-slate-50 transition-colors"><td className="px-6 py-4"><div className="flex items-center gap-3"><Avatar name={u.name} src={u.avatar} className="w-8 h-8 rounded-full" /><span className="font-bold">{u.name}</span></div></td><td className="px-6 py-4 text-slate-500">{u.email}</td><td className="px-6 py-4"><span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ${u.role === 'admin' ? 'bg-roRed/10 text-roRed' : 'bg-roBlue/10 text-roBlue'}`}>{u.role}</span></td><td className="px-6 py-4 text-right space-x-2"><button onClick={() => updateUserRole(u.id, u.role === 'admin' ? 'member' : 'admin').then(refreshData)} className="text-xs font-bold text-roBlue">{u.role === 'admin' ? 'Demote' : 'Promote'}</button>{u.id !== user.id && <button onClick={() => deleteUser(u.id).then(refreshData)} className="text-xs font-bold text-roRed">Delete</button>}</td></tr>
+          <tr key={u.id} className="hover:bg-slate-50 transition-colors"><td className="px-6 py-4"><div className="flex items-center gap-3"><Avatar name={u.name} src={u.avatar} className="w-8 h-8 rounded-full" /><span className="font-bold">{u.name}</span></div></td><td className="px-6 py-4 text-slate-500">{u.email}</td><td className="px-6 py-4"><span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ${u.role === 'admin' ? 'bg-roRed/10 text-roRed' : 'bg-roBlue/10 text-roBlue'}`}>{u.role}</span></td><td className="px-6 py-4 text-right space-x-2"><button onClick={() => updateUserRole(u.id, u.role === 'admin' ? 'member' : 'admin').then(refreshData)} className="text-xs font-bold text-roBlue">{u.role === 'admin' ? 'Demote' : 'Promote'}</button>{u.id !== user.id && <button onClick={() => triggerDelete("Delete User", `Delete user "${u.name}"? This is permanent.`, () => deleteUser(u.id))} className="text-xs font-bold text-roRed">Delete</button>}</td></tr>
         ))}</tbody>
       </table>
     </div>
@@ -206,7 +230,7 @@ const AdminDashboard: React.FC<DashboardProps & { setActiveTab: (t: string) => v
           </div>
         </form>
       </div>
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"><div className="p-6 border-b"><h3 className="font-black text-slate-800">Resources</h3></div><div className="p-8"><div className="grid md:grid-cols-3 gap-6">{resources.map(r => (<div key={r.id} className="p-5 bg-slate-50 border rounded-2xl relative group"><button onClick={() => deleteResource(r.id).then(refreshData)} className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">🗑️</button><span className="text-[9px] font-black bg-white px-2 py-0.5 rounded-full uppercase border text-slate-400 mb-2 inline-block">{r.category}</span><h4 className="font-black text-slate-800 line-clamp-1">{r.title}</h4><p className="text-xs text-slate-500 line-clamp-2 mt-1 mb-4">{r.description}</p><a href={r.url} target="_blank" className="text-roBlue text-xs font-black uppercase tracking-widest hover:underline">Open Link →</a></div>))}</div>{resources.length === 0 && <div className="p-10 text-center text-slate-400 italic">No resources.</div>}</div></div>
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"><div className="p-6 border-b"><h3 className="font-black text-slate-800">Resources</h3></div><div className="p-8"><div className="grid md:grid-cols-3 gap-6">{resources.map(r => (<div key={r.id} className="p-5 bg-slate-50 border rounded-2xl relative group"><button onClick={() => triggerDelete("Delete Resource", `Delete resource "${r.title}"?`, () => deleteResource(r.id))} className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">🗑️</button><span className="text-[9px] font-black bg-white px-2 py-0.5 rounded-full uppercase border text-slate-400 mb-2 inline-block">{r.category}</span><h4 className="font-black text-slate-800 line-clamp-1">{r.title}</h4><p className="text-xs text-slate-500 line-clamp-2 mt-1 mb-4">{r.description}</p><a href={r.url} target="_blank" className="text-roBlue text-xs font-black uppercase tracking-widest hover:underline">Open Link →</a></div>))}</div>{resources.length === 0 && <div className="p-10 text-center text-slate-400 italic">No resources.</div>}</div></div>
     </div>
   );
 
@@ -225,8 +249,14 @@ const AdminDashboard: React.FC<DashboardProps & { setActiveTab: (t: string) => v
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden">
       <header className="px-10 py-8 border-b bg-white flex justify-between items-center"><h1 className="text-3xl font-black text-roBlue tracking-tight capitalize">{activeTab.replace('_', ' ')}</h1><p className="text-slate-400 text-xs font-bold">Admin: <span className="text-slate-800">{user.email}</span></p></header>
-      <main className="flex-1 overflow-y-auto p-12 no-scrollbar"><div className="max-w-6xl mx-auto pb-20">{activeTab === 'events' && renderEvents()}{activeTab === 'gallery' && renderGallery()}{activeTab === 'users' && renderUsers()}{activeTab === 'testimonials' && <div className="grid md:grid-cols-2 gap-8">{testimonials.map(t => (<div key={t.id} className="p-6 bg-white border rounded-2xl shadow-sm flex flex-col gap-4"><p className="text-sm italic text-slate-600">"{t.text}"</p><div className="flex justify-between items-center mt-auto"><div className="flex items-center gap-3"><Avatar name={t.author} className="w-6 h-6 rounded-full" /><span className="text-xs font-bold">{t.author}</span></div><div className="flex gap-2"><button onClick={() => toggleTestimonialApproval(t.id).then(refreshData)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase ${t.approved ? 'bg-slate-200' : 'bg-roBlue text-white'}`}>{t.approved ? 'Hide' : 'Approve'}</button><button onClick={() => deleteTestimonial(t.id).then(refreshData)} className="p-2 text-roRed hover:bg-roRed/5 rounded-lg">🗑️</button></div></div></div>))}</div>}{activeTab === 'resources' && renderResources()}{activeTab === 'content' && renderContent()}</div></main>
+      <main className="flex-1 overflow-y-auto p-12 no-scrollbar"><div className="max-w-6xl mx-auto pb-20">{activeTab === 'events' && renderEvents()}{activeTab === 'gallery' && renderGallery()}{activeTab === 'users' && renderUsers()}{activeTab === 'testimonials' && <div className="grid md:grid-cols-2 gap-8">{testimonials.map(t => (<div key={t.id} className="p-6 bg-white border rounded-2xl shadow-sm flex flex-col gap-4"><p className="text-sm italic text-slate-600">"{t.text}"</p><div className="flex justify-between items-center mt-auto"><div className="flex items-center gap-3"><Avatar name={t.author} className="w-6 h-6 rounded-full" /><span className="text-xs font-bold">{t.author}</span></div><div className="flex gap-2"><button onClick={() => toggleTestimonialApproval(t.id).then(refreshData)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase ${t.approved ? 'bg-slate-200' : 'bg-roBlue text-white'}`}>{t.approved ? 'Hide' : 'Approve'}</button><button onClick={() => triggerDelete("Delete Testimonial", "Delete this user testimonial?", () => deleteTestimonial(t.id))} className="p-2 text-roRed hover:bg-roRed/5 rounded-lg">🗑️</button></div></div></div>))}</div>}{activeTab === 'resources' && renderResources()}{activeTab === 'content' && renderContent()}</div></main>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      {confirmModal && (
+        <ConfirmModal 
+          {...confirmModal}
+          onClose={() => setConfirmModal(null)}
+        />
+      )}
     </div>
   );
 };
